@@ -456,6 +456,11 @@ The report is the only thing that survives, so anything worth keeping must be in
    going. A drive-call error, timeout, slow read, or generic unreachability is NOT a daemon error:
    the daemon accepts \`respond\` immediately and runs the round in the background, so a killed or
    timed-out call was only waiting for a read while the run kept working.
+8. Never add a \`Co-Authored-By\` (or similar agent-name) trailer to any commit message, even if your own default commit habit or another instruction would otherwise add one - this project's captain has explicitly asked for none.
+9. If you open any browser tab (claude-in-chrome) during this task, close it
+   before you report done. Leave no tabs open, and shut down any local preview
+   server you started. This applies even when the browser work was required by
+   the task.
 
 $INBOX_SECTION
 
@@ -547,6 +552,11 @@ $ASK_USER_BLOCK
    going. A drive-call error, timeout, slow read, or generic unreachability is NOT a daemon error:
    the daemon accepts \`respond\` immediately and runs the round in the background, so a killed or
    timed-out call was only waiting for a read while the run kept working.
+8. Never add a \`Co-Authored-By\` (or similar agent-name) trailer to any commit message, even if your own default commit habit or another instruction would otherwise add one - this project's captain has explicitly asked for none.
+9. If you open any browser tab (claude-in-chrome) during this task, close it
+   before you report done. Leave no tabs open, and shut down any local preview
+   server you started. This applies even when the browser work was required by
+   the task.
 
 $INBOX_SECTION
 
