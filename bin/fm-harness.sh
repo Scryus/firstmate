@@ -40,8 +40,10 @@
 # config/secondmate-harness format: a single line "<harness> [<model>] [<effort>]",
 # whitespace-separated. A bare "<harness>" (today's format) behaves exactly as before:
 # harness only, no model/effort. Only the first non-empty, non-comment line is parsed.
-# Model/effort come ONLY from this file - config/crew-harness stays a bare adapter
-# name and is never parsed for a model.
+# A pinned model/effort comes ONLY from this file - config/crew-harness stays a bare
+# adapter name and is never parsed for a model. Absent a pin, resolve_secondmate_model
+# and resolve_secondmate_effort fall back to secondmate_provider_default instead of a
+# file-sourced value.
 # Detection evidence and precedence:
 #   Markers  - verified environment variables a harness publishes about itself.
 #              Cheap and unambiguous about WHICH harness set them, but they are
