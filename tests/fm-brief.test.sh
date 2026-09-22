@@ -456,6 +456,38 @@ test_ask_user_escalation_format() {
   pass "fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot"
 }
 
+# Regression coverage for the captain's two standing crewmate rules (commit
+# efa5fd3c, landed here as ff63335): no Co-Authored-By trailer, and no browser
+# tab or local preview server left running when a task reports done. Both the
+# ship and scout rule blocks must carry both rules, not just one template.
+test_ship_and_scout_forbid_coauthor_trailer_and_require_tab_cleanup() {
+  local home id brief
+  home="$TMP_ROOT/coauthor-tab-home"
+  mkdir -p "$home/data"
+  for kind in ship scout; do
+    id="brief-coauthor-tab-$kind"
+    if [ "$kind" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+    fi
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$kind brief was not scaffolded"
+    # shellcheck disable=SC2016  # backtick is deliberate: the rule quotes the literal trailer name
+    assert_grep 'Never add a `Co-Authored-By` (or similar agent-name) trailer to any commit message' "$brief" \
+      "$kind brief missing the no-Co-Authored-By-trailer rule"
+    assert_grep "this project's captain has explicitly asked for none" "$brief" \
+      "$kind brief's Co-Authored-By rule lost its captain-authority justification"
+    assert_grep "If you open any browser tab (claude-in-chrome) during this task, close it" "$brief" \
+      "$kind brief missing the browser-tab-cleanup rule"
+    assert_grep "shut down any local preview" "$brief" \
+      "$kind brief's tab-cleanup rule lost the local preview server requirement"
+    assert_grep "This applies even when the browser work was required by" "$brief" \
+      "$kind brief's tab-cleanup rule lost the required-work carve-out"
+  done
+  pass "fm-brief.sh: ship and scout rule blocks forbid Co-Authored-By trailers and require browser tab cleanup"
+}
+
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -1072,6 +1104,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
+test_ship_and_scout_forbid_coauthor_trailer_and_require_tab_cleanup
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path
