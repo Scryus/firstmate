@@ -146,6 +146,7 @@ const outcomeScript = join(fmRoot, "bin", "fm-branch-outcome.sh");
 const leaseScript = join(fmRoot, "bin", "fm-lease.sh");
 const wakeGrantScript = join(fmRoot, "bin", "fm-wake-grant.sh");
 const loadedMarker = join(state, ".pi-branch-extension-loaded");
+const mainModelFile = join(state, ".main-model");
 const modelPinFile = join(config, "supervision-branch-model");
 const effortPinFile = join(config, "supervision-branch-effort");
 
@@ -695,7 +696,19 @@ export default function (pi: ExtensionAPI) {
   }
 
   function rememberMainModel(ctx?: { model?: { provider: string; id: string }; modelRegistry?: ModelRegistry }): void {
-    if (ctx?.model) mainModel = { provider: ctx.model.provider, id: ctx.model.id };
+    if (ctx?.model) {
+      mainModel = { provider: ctx.model.provider, id: ctx.model.id };
+      const temporaryPath = `${mainModelFile}.${process.pid}.${randomUUID()}.tmp`;
+      try {
+        mkdirSync(state, { recursive: true });
+        writeFileSync(temporaryPath, `${ctx.model.provider}/${ctx.model.id}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+        renameSync(temporaryPath, mainModelFile);
+      } catch {
+        // The resolver treats an absent or unreadable observation as unknown.
+      } finally {
+        rmSync(temporaryPath, { force: true });
+      }
+    }
     if (ctx?.modelRegistry) mainModelRegistry = ctx.modelRegistry;
   }
 
@@ -1777,7 +1790,7 @@ ${context.command}
     const selected = (event as { model?: { provider: string; id: string } }).model;
     if (!selected) return;
     const changed = !mainModel || mainModel.provider !== selected.provider || mainModel.id !== selected.id;
-    mainModel = { provider: selected.provider, id: selected.id };
+    rememberMainModel({ model: selected });
     if (!changed || readModelPin()) return;
     branchSelectionRevision += 1;
     releaseBranchForSelectionChange();

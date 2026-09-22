@@ -9,10 +9,8 @@
 #                                        defers to the crew resolution, so an unset
 #                                        secondmate-harness behaves exactly as the crew
 #                                        harness did before this knob existed.
-#        fm-harness.sh secondmate-model    print the optional MODEL token from
-#                                        config/secondmate-harness, or empty when absent.
-#        fm-harness.sh secondmate-effort   print the optional EFFORT token from
-#                                        config/secondmate-harness, or empty when absent.
+#        fm-harness.sh secondmate-model    print the configured or provider-aware MODEL token.
+#        fm-harness.sh secondmate-effort   print the configured or provider-aware EFFORT token.
 #        fm-harness.sh validate-native-effort <harness> <model> <effort>
 #                                        Refuse ultra unless the harness is pi or
 #                                        pi-signed and the model explicitly names
@@ -61,6 +59,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-cursor-lib.sh
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
@@ -465,23 +464,61 @@ resolve_secondmate() {
   if [ -z "$sm" ] || [ "$sm" = "default" ]; then resolve_crew; else echo "$sm"; fi
 }
 
-# Print the optional model token (2nd field) from config/secondmate-harness, or
-# empty when the harness token is absent/"default" (harness-only file, same as
-# today) or when no model token is present.
+# Print the provider id of the live Pi primary's own current model, or
+# nothing when unknown (a non-Pi primary, or a Pi primary that has not yet
+# reported one). `.pi/extensions/fm-branch-supervision.ts` is the only writer,
+# recording "<provider>/<id>" to state/.main-model on every session_start and
+# model_select event it receives from Pi; absent or unreadable means unknown,
+# never a guessed provider.
+main_model_provider() {
+  local line
+  [ -f "$STATE/.main-model" ] || return 0
+  line=$(head -n1 "$STATE/.main-model" 2>/dev/null) || return 0
+  printf '%s\n' "${line%%/*}"
+}
+
+# Print "<model> <effort>" for the provider-aware secondmate default that
+# applies to a fully-defaulted <harness> (config/secondmate-harness absent or
+# "default", so the harness came from the crew/own fallback chain), or nothing
+# when that harness has no known-safe default - never guess an unsupported
+# model. Middle-tier defaults: a Claude-resolved secondmate gets Sonnet 5; a
+# Pi-resolved secondmate whose live primary is running on Codex gets Luna.
+secondmate_provider_default() {
+  local harness=$1
+  case "$harness" in
+  claude) printf '%s\n' "claude-sonnet-5 medium" ;;
+  pi | pi-signed)
+    [ "$(main_model_provider)" = openai-codex ] && printf '%s\n' "gpt-5.6-luna medium"
+    ;;
+  esac
+}
+
+# Print the optional model token (2nd field) from config/secondmate-harness
+# when the harness token is an explicit, non-default pin - preserving that
+# pin, including a bare harness-only line, exactly as an operator wrote it
+# (backward-compat). Otherwise the harness came from the crew/own fallback
+# chain, so print the provider-aware default for the harness it resolved to,
+# or nothing when that harness has no known-safe default.
 resolve_secondmate_model() {
   local sm
   sm=$(secondmate_field 1)
-  [ -n "$sm" ] && [ "$sm" != "default" ] || return 0
-  secondmate_field 2
+  if [ -n "$sm" ] && [ "$sm" != "default" ]; then
+    secondmate_field 2
+    return
+  fi
+  secondmate_provider_default "$(resolve_secondmate)" | cut -d ' ' -f1
 }
 
-# Print the optional effort token (3rd field) from config/secondmate-harness,
-# the same way.
+# Print the optional effort token (3rd field) from config/secondmate-harness
+# the same way, or the provider-aware default's effort half.
 resolve_secondmate_effort() {
   local sm
   sm=$(secondmate_field 1)
-  [ -n "$sm" ] && [ "$sm" != "default" ] || return 0
-  secondmate_field 3
+  if [ -n "$sm" ] && [ "$sm" != "default" ]; then
+    secondmate_field 3
+    return
+  fi
+  secondmate_provider_default "$(resolve_secondmate)" | cut -d ' ' -f2
 }
 
 validate_native_effort() {

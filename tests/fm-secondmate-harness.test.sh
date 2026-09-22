@@ -139,7 +139,8 @@ SH
 # ===========================================================================
 # config/secondmate-harness holds "<harness> [<model>] [<effort>]" on one line.
 # A bare harness (today's format) must yield empty model/effort - the
-# backward-compat requirement. The file-line field uses \n for an embedded
+# backward-compat requirement. An absent or default harness token receives the
+# provider-aware fallback. The file-line field uses \n for an embedded
 # newline (expanded via printf '%b') so a row can express a multi-line file; the
 # literal token ABSENT skips creating the file entirely.
 #   <label>^<file-line-or-ABSENT>^<expect-harness>^<expect-model>^<expect-effort>
@@ -160,16 +161,51 @@ test_secondmate_model_effort_tokens() {
     [ "$got_m" = "$exp_model" ] || fail "$label: model resolved '$got_m', expected '$exp_model'"
     [ "$got_e" = "$exp_effort" ] || fail "$label: effort resolved '$got_e', expected '$exp_effort'"
   done <<'ROWS'
-absent file -> own harness, empty model/effort^ABSENT^claude^^
+absent file -> own harness, Claude provider-aware defaults^ABSENT^claude^claude-sonnet-5^medium
 bare harness only -> empty model/effort (backward-compat)^claude^claude^^
 harness + model -> model only^claude opus^claude^opus^
 harness + model + effort -> both^claude opus high^claude^opus^high
 signed Pi wrapper + model + effort preserves every token^pi-signed openai-codex/gpt-5.6-sol max^pi-signed^openai-codex/gpt-5.6-sol^max
-default harness token -> falls back to crew, empty model/effort^default^claude^^
+default harness token -> falls back to crew, Claude provider-aware defaults^default^claude^claude-sonnet-5^medium
 extra whitespace between tokens is tolerated^grok   grok-4    xhigh^grok^grok-4^xhigh
 leading/trailing blank lines and a comment are skipped^# a comment\n\nclaude opus low\n^claude^opus^low
 ROWS
-  pass "C1 fm-harness.sh secondmate-model/secondmate-effort resolve the optional tokens; bare harness stays empty (backward-compat)"
+  pass "C1 fm-harness.sh secondmate-model/secondmate-effort resolve configured tokens; bare harness stays empty (backward-compat)"
+}
+
+# Provider-aware defaults apply only when the secondmate harness itself is
+# inherited from the fallback chain. A missing or unreadable Pi model record is
+# unknown, so it must not guess a provider-specific model.
+test_secondmate_provider_defaults() {
+  local dir cfg state got_m got_e
+  dir="$TMP_ROOT/provider-defaults"
+  cfg="$dir/config"
+  state="$dir/state"
+  mkdir -p "$cfg" "$state"
+
+  got_m=$(PATH="$BLIND_BIN:$BASE_PATH" CLAUDECODE=1 FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)
+  got_e=$(PATH="$BLIND_BIN:$BASE_PATH" CLAUDECODE=1 FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-effort)
+  [ "$got_m" = claude-sonnet-5 ] || fail "provider default: Claude model '$got_m', expected claude-sonnet-5"
+  [ "$got_e" = medium ] || fail "provider default: Claude effort '$got_e', expected medium"
+
+  printf '%s\n' 'openai-codex/gpt-5.6-astra' > "$state/.main-model"
+  got_m=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)
+  got_e=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-effort)
+  [ "$got_m" = gpt-5.6-luna ] || fail "provider default: Codex model '$got_m', expected gpt-5.6-luna"
+  [ "$got_e" = medium ] || fail "provider default: Codex effort '$got_e', expected medium"
+
+  printf '%s\n' 'openai/gpt-5.6-astra' > "$state/.main-model"
+  got_m=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)
+  got_e=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-effort)
+  [ -z "$got_m" ] || fail "provider default: unknown provider guessed model '$got_m'"
+  [ -z "$got_e" ] || fail "provider default: unknown provider guessed effort '$got_e'"
+
+  printf '%s\n' 'claude opus high' > "$cfg/secondmate-harness"
+  got_m=$(PATH="$BLIND_BIN:$BASE_PATH" CLAUDECODE=1 FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)
+  got_e=$(PATH="$BLIND_BIN:$BASE_PATH" CLAUDECODE=1 FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-effort)
+  [ "$got_m" = opus ] || fail "provider default: explicit model '$got_m', expected opus"
+  [ "$got_e" = high ] || fail "provider default: explicit effort '$got_e', expected high"
+  pass "C2 fm-harness provider-aware secondmate defaults preserve explicit pins and unknown providers"
 }
 
 # ===========================================================================
@@ -2634,6 +2670,7 @@ SH
 test_harness_resolution
 test_cursor_marker_detection
 test_secondmate_model_effort_tokens
+test_secondmate_provider_defaults
 test_pi_signed_detection_and_session_lock_identity
 test_dash_leading_process_names_are_basename_operands
 test_propagate_lib
