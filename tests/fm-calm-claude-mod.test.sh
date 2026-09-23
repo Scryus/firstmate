@@ -4,10 +4,8 @@
 #   - the plugin's declared shape: one hooks module and nothing else, reached from the
 #     project's .claude/skills auto-load path through the tracked symlink, so nothing
 #     of it can load while CLAUDE_CODE_ENABLE_FUNCTION_HOOKS is off;
-#   - the harness-neutral sprite core both harnesses share: the Pi widget's rendering
-#     is byte-for-byte the shared frame painted with standard ANSI codes, so extracting
-#     the core changed nothing Pi draws;
-#   - the Raster packing of that frame and its base64 encoder;
+#   - the sprite core the Pi extension imports from the mod: the Pi widget's rendering
+#     is byte-for-byte the shared frame painted with standard ANSI codes;
 #   - the pure presentation policy: home resolution, preference values, working notes;
 #   - the operational-input classifier's parity with bin/fm-operational-input.sh over
 #     envelopes the shell owner itself encodes, its legacy shapes, and near misses.
@@ -143,90 +141,6 @@ JS
   out=$(run_node "$TMP_ROOT/sprite.mjs" 2>&1) || fail "shared sprite: $out"
   assert_contains "$out" "sprite-ok frames=533" "the sprite parity sweep did not cover every width and step"
   pass "the Pi working ship renders byte-for-byte the shared sprite core's frame painted in standard ANSI, at every width, cadence step, freeze, clamp, and reset"
-}
-
-test_raster_packing() {
-  local out
-  cat >"$TMP_ROOT/raster.mjs" <<JS
-import { pathToFileURL } from "node:url";
-import { randomBytes } from "node:crypto";
-const raster = await import(pathToFileURL(${MOD@Q} + "/lib/fm-calm-ship-raster.ts").href);
-const core = await import(pathToFileURL(${MOD@Q} + "/lib/fm-calm-working-ship-sprite.ts").href);
-const check = (condition, message) => { if (!condition) throw new Error(message); };
-for (let length = 0; length <= 80; length += 1) {
-  const bytes = new Uint8Array(randomBytes(length));
-  check(raster.encodeBase64(bytes) === Buffer.from(bytes).toString("base64"), \`base64 diverged at length \${length}\`);
-}
-const decode = (cells, columns, rows) => {
-  const words = new Uint32Array(new Uint8Array(Buffer.from(cells, "base64")).buffer);
-  check(words.length === columns * rows * 3, \`\${words.length} words for \${columns}x\${rows}\`);
-  const grid = [];
-  for (let row = 0; row < rows; row += 1) {
-    const line = [];
-    for (let column = 0; column < columns; column += 1) {
-      const offset = (row * columns + column) * 3;
-      line.push({ glyph: String.fromCodePoint(words[offset]), fg: words[offset + 1], bg: words[offset + 2] });
-    }
-    grid.push(line);
-  }
-  return grid;
-};
-// Claude Code's own theme tables: spinner blue water per family, Claude orange boat.
-const palettes = raster.CALM_SHIP_RASTER_PALETTES;
-check(palettes.dark.water === 0x93a5ff && palettes.dark.boat === 0xd77757, "dark palette is not Claude Code's dark spinner blue and Claude orange");
-check(palettes.light.water === 0x5769f7 && palettes.light.boat === 0xd77757, "light palette is not Claude Code's light spinner blue and Claude orange");
-check(palettes.dark.plain === raster.CALM_SHIP_RASTER_DEFAULT_COLOR && palettes.light.plain === raster.CALM_SHIP_RASTER_DEFAULT_COLOR, "plain padding is not the terminal default");
-for (const [theme, family] of [["dark", "dark"], ["dark-ansi", "dark"], ["dark-daltonized", "dark"], ["light", "light"], ["light-ansi", "light"], ["light-daltonized", "light"], ["auto", "light"], ["custom:rose", "light"], [undefined, "light"], [42, "light"], ["", "light"]]) {
-  check(raster.calmShipPaletteFamily(theme) === family, \`theme \${JSON.stringify(theme)} chose \${raster.calmShipPaletteFamily(theme)}, not \${family}\`);
-}
-for (const [family, colors] of Object.entries(palettes)) for (const width of [1, 2, 3, 4, 5, 20, 77, 512]) {
-  const sprite = core.createCalmWorkingShipSprite();
-  for (let step = 0; step < 6; step += 1) {
-    const frame = sprite.frame(width);
-    const packed = raster.packCalmShipRasterCells(frame, width, colors);
-    check(packed.rows === frame.length, \`rows \${packed.rows} for a \${frame.length}-row frame\`);
-    const grid = decode(packed.cells, width, packed.rows);
-    for (let row = 0; row < frame.length; row += 1) {
-      let column = 0;
-      for (const run of frame[row]) {
-        for (const glyph of Array.from(run.text)) {
-          const cell = grid[row][column];
-          check(cell.glyph === glyph, \`glyph mismatch at \${row},\${column}: \${cell.glyph} vs \${glyph}\`);
-          check(cell.fg === colors[run.color], \`\${family} color mismatch at \${row},\${column}\`);
-          column += 1;
-        }
-      }
-      for (; column < width; column += 1) {
-        check(grid[row][column].glyph === " " && grid[row][column].fg === colors.plain, \`padding at \${row},\${column} is not a plain space\`);
-      }
-      check(grid[row].every((cell) => cell.bg === raster.CALM_SHIP_RASTER_DEFAULT_COLOR), "a background was set");
-      check(grid[row].every((cell) => cell.glyph.codePointAt(0) <= 0xffff), "a glyph left the BMP");
-    }
-    sprite.tick();
-  }
-}
-// The packer's pre-load default is the both-readable light fallback.
-{
-  const packed = raster.packCalmShipRasterCells([[{ text: "▁", color: "water" }]], 1);
-  check(decode(packed.cells, 1, 1)[0][0].fg === palettes.light.water, "the default packing palette is not the light fallback");
-}
-// A run wider than the grid is clipped, never wrapped into the next row.
-{
-  const packed = raster.packCalmShipRasterCells([[{ text: "▁▁▁▁▁▁▁▁", color: "water" }], [{ text: "◿│◣", color: "boat" }]], 4);
-  check(packed.rows === 2, "clip changed the row count");
-  const grid = decode(packed.cells, 4, 2);
-  check(grid[0].map((c) => c.glyph).join("") === "▁▁▁▁" && grid[1].map((c) => c.glyph).join("") === "◿│◣ ", "clip wrapped or dropped cells");
-}
-check(raster.packCalmShipRasterCells([], 3).rows === 1, "an empty frame did not pack one blank row");
-check(raster.calmShipRasterColumns(undefined) === 78, "unmeasured viewport width");
-check(raster.calmShipRasterColumns(160) === 158, "measured viewport width");
-check(raster.calmShipRasterColumns(2) === 1 && raster.calmShipRasterColumns(-5) === 1, "narrow viewport floor");
-check(raster.calmShipRasterColumns(10000) === 512, "raster width ceiling");
-console.log("raster-ok");
-JS
-  out=$(run_node "$TMP_ROOT/raster.mjs" 2>&1) || fail "raster packing: $out"
-  assert_contains "$out" "raster-ok" "the raster packing check did not complete"
-  pass "the Raster packing lays the shared frame out row-major in Claude Code's dark or light theme palette, using light as the both-readable fallback, with plain padding, default backgrounds, BMP glyphs, clipping, and a standard base64 encoding"
 }
 
 test_presentation_policy() {
@@ -420,6 +334,5 @@ JS
 
 test_plugin_shape
 test_shared_sprite_and_pi_rendering
-test_raster_packing
 test_presentation_policy
 test_classifier_parity_with_shell_owner

@@ -164,15 +164,6 @@ export function spinner(requestId = "agent-main", viewport: { columns: number; r
 }
 
 /** A Spinner drawing before any surface has measured: no viewport at all. */
-export function unmeasuredSpinner(requestId = "agent-main") {
-  return {
-    surface: "terminal" as const,
-    component: "Spinner" as const,
-    requestId,
-    props: { word: "Sauteing", message: null, mode: "requesting" as const },
-  };
-}
-
 export function toolUse(requestId = "tool-1") {
   return {
     surface: "terminal" as const,
@@ -242,63 +233,6 @@ export function isStock(tree: unknown): boolean {
   return JSON.stringify(tree).includes(STOCK_TEXT);
 }
 
-/** The Raster element inside a Spinner drawing, or undefined when the drawing has none. */
-export function rasterOf(tree: unknown): { columns: number; rows: number; cells: string; key: string } | undefined {
-  const seen: unknown[] = [tree];
-  while (seen.length > 0) {
-    const node = seen.pop();
-    if (node === null || typeof node !== "object") continue;
-    const element = node as { type?: unknown; props?: Record<string, unknown>; children?: unknown };
-    if (element.type === "Raster" && element.props !== undefined) {
-      return element.props as { columns: number; rows: number; cells: string; key: string };
-    }
-    if (Array.isArray(element.children)) seen.push(...element.children);
-    else if (element.children !== undefined) seen.push(element.children);
-    if (element.props !== undefined && "children" in element.props) seen.push(element.props.children);
-  }
-  return undefined;
-}
-
-const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/** Decode packed cells back into rows of glyphs and foregrounds, the way the surface reads them. */
-export function decodeCells(cells: string, columns: number, rows: number): { glyphs: string[]; foregrounds: number[][]; backgrounds: number[][] } {
-  const clean = cells.replace(/=+$/, "");
-  const bytes: number[] = [];
-  let buffer = 0;
-  let bits = 0;
-  for (const char of clean) {
-    buffer = (buffer << 6) | BASE64.indexOf(char);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes.push((buffer >> bits) & 0xff);
-    }
-  }
-  const words = new Uint32Array(new Uint8Array(bytes).buffer);
-  if (words.length !== columns * rows * 3) {
-    throw new Error(`cells decode to ${words.length} words, not ${columns * rows * 3}`);
-  }
-  const glyphs: string[] = [];
-  const foregrounds: number[][] = [];
-  const backgrounds: number[][] = [];
-  for (let row = 0; row < rows; row += 1) {
-    let text = "";
-    const fg: number[] = [];
-    const bg: number[] = [];
-    for (let column = 0; column < columns; column += 1) {
-      const offset = (row * columns + column) * 3;
-      text += String.fromCodePoint(words[offset]!);
-      fg.push(words[offset + 1]!);
-      bg.push(words[offset + 2]!);
-    }
-    glyphs.push(text);
-    foregrounds.push(fg);
-    backgrounds.push(bg);
-  }
-  return { glyphs, foregrounds, backgrounds };
-}
-
 /** The exact current operational envelope for one kind, as bin/fm-operational-input.sh encodes it. */
 export function operational(kind: string, body: string): string {
   return `\u2063FIRSTMATE_OP: v1 ${kind}: ${body}`;
@@ -307,15 +241,4 @@ export function operational(kind: string, body: string): string {
 /** The established from-firstmate routing carrier. */
 export function fromFirstmate(body: string): string {
   return `[fm-from-firstmate]\u2063${body}`;
-}
-
-/** A `config.set` of the `theme` row from the `/config` menu, as the engine raises it. */
-export function themeChange(value: string, previous: string) {
-  return {
-    key: "theme",
-    value,
-    previous,
-    provider: { plugin: "engine", tier: "core" as const },
-    origin: { kind: "composer" as const },
-  };
 }

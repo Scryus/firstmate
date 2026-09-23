@@ -102,6 +102,15 @@ describe("/calm", () => {
     expect(isHidden(await $.ui.render(toolGroup("g", true)))).toBe(true);
   });
 
+  test("leaves the stock working row untouched while Calm is on", async ($, on) => {
+    const { clock, journal } = world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    expect(isHidden(await $.ui.render(toolUse()))).toBe(true);
+    expect(isStock(await $.ui.render(spinner()))).toBe(true);
+    await clock.advance(220 * 8);
+    expect(journal.blits).toHaveLength(0);
+  });
+
   test("toggles off: persists off and restores the engine's drawings", async ($, on) => {
     const { files, journal } = world(on, { preference: "on\n" });
     await $.session.start(sessionStart);

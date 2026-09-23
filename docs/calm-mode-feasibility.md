@@ -688,15 +688,15 @@ Three further observations, recorded so they are not read as failures: the `ctrl
 
 ### The shipped mod
 
-`.claude/mods/firstmate-calm` holds the plugin: its manifest, `hooks/hooks.json` naming the one module, `hooks/register.ts` (the only file that touches `$`), and pure libraries the tests drive under Node: the sprite core both harnesses share, the Raster packing, the presentation policy, and a port of `bin/fm-operational-input.sh`'s `classify` guarded by a corpus parity test.
+`.claude/mods/firstmate-calm` holds the plugin: its manifest, `hooks/hooks.json` naming the one module, `hooks/register.ts` (the only file that touches `$`), and pure libraries the tests drive under Node: the sprite core the Pi extension imports (the Claude Code mod itself draws no boat), the presentation policy, and a port of `bin/fm-operational-input.sh`'s `classify` guarded by a corpus parity test.
 `.agents/skills/firstmate-calm` is a symlink to it, so the project's `.claude/skills` scan adopts it, and it carries no `SKILL.md` so other harnesses' skill loaders see nothing.
 The mod declares no command file, skill, agent, or classic hook; its function-hooks handlers independently require the exact environment opt-in before `/calm` registration or any other side effect, including when Claude Code loads the module through its rollout flag.
 Working-note and preserved-reply keys are recorded from `turn.step` per text block and seeded from `$.session.messages()` for a restored transcript, with [`calm.md`](calm.md#claude-code) owning the exact Claude Code visibility contract.
 
 ```text
 $ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin validate --strict .claude/mods/firstmate-calm
-  ❯ ./register.ts hooks: session.start, command.run{command=calm}, config.set{key=theme}, turn.step, ui.render{component=Spinner}, ui.render{component=ToolUse}, ui.render{component=ToolResult}, ui.render{component=ToolGroup}, ui.render{component=UserMessage}, ui.render{component=AssistantMessage}
-  ❯ ./register.ts calls: $.clock.every (via load), $.command.register, $.config.list (via readTheme), $.env.get (via isActivated, load), $.fs.read (via readPreference), $.fs.write, $.session.messages (via load), $.ui.blit (via repaintShip), $.ui.invalidate, $.ui.resolve, $.ui.toast
+  ❯ ./register.ts hooks: session.start, command.run{command=calm}, turn.step, ui.render{component=ToolUse}, ui.render{component=ToolResult}, ui.render{component=ToolGroup}, ui.render{component=UserMessage}, ui.render{component=AssistantMessage}
+  ❯ ./register.ts calls: $.command.register, $.env.get (via isActivated, load), $.fs.read (via readPreference), $.fs.write, $.session.messages (via load), $.ui.invalidate, $.ui.resolve, $.ui.toast
   ❯ ./register.ts env writes: nothing
   ❯ ./register.ts env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE
 ✔ Validation passed
@@ -729,8 +729,8 @@ ok - Claude Code 2.1.272 (Claude Code) with the flag on: the mod auto-loads from
 ok - Claude Code 2.1.272 (Claude Code) resumes the transcript with Calm's hidden rows still hidden and the preference intact
 
 $ bin/fm-test-run.sh tests/fm-calm-claude-mod-plugin.test.sh
-ok - Claude Code 2.1.272 (Claude Code) validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the working row, tool, user, and assistant drawings and /calm
-ok - Claude Code 2.1.272 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the clock-driven working ship
+ok - Claude Code 2.1.272 (Claude Code) validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the tool, user, and assistant drawings and /calm, and never the working row
+ok - Claude Code 2.1.272 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the untouched stock working row
 ```
 
 The flag-off session's settled screen, with the preference `on` on disk, drew Claude Code's own rows exactly as a session without the mod does:
@@ -744,3 +744,9 @@ The flag-off session's settled screen, with the preference `on` on disk, drew Cl
 
 ✻ Sautéed for 8s · done 11:07 AM
 ```
+
+## 2026-09-23 Claude Code working row returned to the engine
+
+The Claude Code mod no longer hooks the `Spinner` component: the stock working row draws exactly as Claude Code draws it while Calm is on, and the mod draws no boat.
+Its Raster packing, theme-color reading, repaint timer, and boat tests were removed, and the sprite core stays only because the Pi extension imports it.
+Every other Calm hiding is unchanged, and the dated records above describe the mod as it was on their dates.
