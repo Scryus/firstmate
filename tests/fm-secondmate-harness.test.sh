@@ -192,7 +192,7 @@ test_secondmate_provider_defaults() {
   got_m=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)
   got_e=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-effort)
   [ "$got_m" = gpt-5.6-luna ] || fail "provider default: Codex model '$got_m', expected gpt-5.6-luna"
-  [ "$got_e" = medium ] || fail "provider default: Codex effort '$got_e', expected medium"
+  [ "$got_e" = low ] || fail "provider default: Codex effort '$got_e', expected low"
 
   printf '%s\n' 'openai/gpt-5.6-astra' > "$state/.main-model"
   got_m=$(PATH="$BLIND_BIN:$BASE_PATH" PI_CODING_AGENT=true FM_CONFIG_OVERRIDE="$cfg" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-harness.sh" secondmate-model)

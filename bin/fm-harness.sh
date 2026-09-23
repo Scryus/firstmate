@@ -490,7 +490,7 @@ secondmate_provider_default() {
   case "$harness" in
   claude) printf '%s\n' "claude-sonnet-5 medium" ;;
   pi | pi-signed)
-    [ "$(main_model_provider)" = openai-codex ] && printf '%s\n' "gpt-5.6-luna medium"
+    [ "$(main_model_provider)" = openai-codex ] && printf '%s\n' "gpt-5.6-luna low"
     ;;
   esac
 }

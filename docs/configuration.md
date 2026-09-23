@@ -350,7 +350,7 @@ When it is absent or contains `default`, crewmates mirror the firstmate's own ha
 The first non-empty, non-comment line is parsed as `<harness> [<model>] [<effort>]`.
 A bare `<harness>` remains an explicit harness-only override and preserves the previous behavior by supplying no model or effort launch flag.
 When the harness token is absent or `default`, secondmate launch falls back through `config/crew-harness` and then the primary's own harness.
-With that fallback active, a Claude secondmate defaults to `claude-sonnet-5` at `medium` effort, while a Pi primary whose active provider is `openai-codex` defaults to `gpt-5.6-luna` at `medium` effort.
+With that fallback active, a Claude secondmate defaults to `claude-sonnet-5` at `medium` effort, while a Pi primary whose active provider is `openai-codex` defaults to `gpt-5.6-luna` at `low` effort.
 Other providers and harnesses remain unpinned rather than receiving a guessed model.
 `fm-harness.sh secondmate-model` and `fm-harness.sh secondmate-effort` expose the configured or provider-aware values; `config/crew-harness` remains a bare adapter-name file.
 Changing this pin affects the next secondmate spawn or control-plane relaunch; the relaunch profile rules are owned by [`docs/agent-control.md`](agent-control.md#transactional-relaunch).
