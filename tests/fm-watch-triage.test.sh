@@ -759,6 +759,41 @@ test_turn_ended_not_working_surfaced() {
   pass "a bare turn-end whose crew is not provably working is surfaced (the swallowed-finish fix)"
 }
 
+# --- signal grace ends early once each status has its turn-end ---------------
+# The grace exists to coalesce a crewmate's final status write with the same
+# turn's turn-end. Once both have landed there is nothing left to coalesce, so the
+# wake must surface well before a long grace elapses; a status whose turn-end has
+# not landed must still linger for the grace.
+test_signal_grace_ends_when_turn_end_pairs_status() {
+  local dir state fakebin out pid
+  dir=$(make_case grace-paired); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  printf 'done [at=1]: finished\n' > "$state/task.status"
+  watch_bg "$state" "$fakebin" "$out" env FM_SIGNAL_GRACE=60
+  pid=$!
+  sleep 1
+  : > "$state/task.turn-ended"
+  wait_for_exit "$pid" 100 || fail "a paired status and turn-end waited out the whole signal grace"
+  grep -F "$state/task.status" "$out" >/dev/null || fail "early wake did not carry the status signal"
+  grep -F "$state/task.turn-ended" "$out" >/dev/null || fail "early wake did not coalesce the turn-end signal"
+  pass "signal grace ends early once the status is paired with its turn-end, and both coalesce into one wake"
+}
+
+test_signal_grace_holds_for_unpaired_status() {
+  local dir state fakebin out pid
+  dir=$(make_case grace-unpaired); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  printf 'done [at=1]: finished\n' > "$state/task.status"
+  watch_bg "$state" "$fakebin" "$out" env FM_SIGNAL_GRACE=4
+  pid=$!
+  wait_live "$pid" 25 || fail "a status with no turn-end surfaced before the signal grace elapsed"
+  wait_for_exit "$pid" 100 || fail "an unpaired status never surfaced after the signal grace"
+  grep -F "$state/task.status" "$out" >/dev/null || fail "the unpaired status wake did not carry the status signal"
+  pass "signal grace still lingers for a status whose turn-end has not landed"
+}
+
 # --- bare turn-end, unverifiable harness: pane churn is the third proof --------
 # A harness whose semantic busy state has no verified source (codex) can never
 # report working, so the two proofs above are unreachable for it and EVERY worker
@@ -5960,6 +5995,8 @@ test_secondmate_status_signal_never_absorbed_classifier
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
+test_signal_grace_ends_when_turn_end_pairs_status
+test_signal_grace_holds_for_unpaired_status
 test_turn_ended_churning_pane_absorbed
 test_turn_ended_churn_resets_prior_stale_classification
 test_turn_ended_churn_resets_wedge_state_before_stale_poll

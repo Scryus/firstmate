@@ -1731,6 +1731,43 @@ scan_signals() {
   return 0
 }
 
+# 0 when every pending status file in the tab-separated scan_signals lines on
+# stdin is paired with its own pending .turn-ended marker, so the crewmate's turn
+# has already ended and no trailing signal is left to coalesce. A status file
+# with no pending turn-end (a mid-turn working: note, or a secondmate status,
+# which has no worker turn-end marker in this home) keeps the full grace.
+signal_grace_pairs_complete() {
+  local lines sf sig f
+  lines=$(cat)
+  while IFS=$(printf '\t') read -r sf sig f; do
+    case "$f" in
+      *.status)
+        printf '%s\n' "$lines" | cut -f3 | grep -qxF -- "${f%.status}.turn-ended" || return 1
+        ;;
+    esac
+  done <<EOF
+$lines
+EOF
+  return 0
+}
+
+# Linger up to SIGNAL_GRACE seconds after a first signal so trailing signals
+# coalesce into one wake, but stop as soon as every pending status file has its
+# turn-end paired (signal_grace_pairs_complete): waiting longer then only delays
+# the wake. A non-integer grace keeps the plain fixed sleep.
+signal_grace_wait() {  # <first-pending>
+  local pending=$1 deadline
+  case "$SIGNAL_GRACE" in
+    ''|*[!0-9]*) sleep "$SIGNAL_GRACE"; return 0 ;;
+  esac
+  deadline=$((SECONDS + SIGNAL_GRACE))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    printf '%s\n%s\n' "$pending" "$(scan_signals)" | signal_grace_pairs_complete && return 0
+    sleep 1
+  done
+  return 0
+}
+
 # Deliver a durably queued process-event result to firstmate. Publication is
 # owned by bin/fm-procevent.sh - by the runner at capture time and by reconcile's
 # re-announcement - so this decides only whether a queued check record has been
@@ -2485,14 +2522,15 @@ EOF
     fi
   fi
 
-  # On the first changed signal, linger one grace period and re-scan before
-  # classifying: a crewmate's final status write and the same turn's turn-end
-  # hook land seconds apart, and reporting them as separate actionable wakes
-  # costs a full firstmate turn each. The re-scan also picks up a newer
-  # signature for an already-pending file (last write wins below).
+  # On the first changed signal, linger up to one grace period and re-scan
+  # before classifying: a crewmate's final status write and the same turn's
+  # turn-end hook land seconds apart, and reporting them as separate actionable
+  # wakes costs a full firstmate turn each. signal_grace_wait ends the linger
+  # early once every pending status has its turn-end. The re-scan also picks up
+  # a newer signature for an already-pending file (last write wins below).
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
-    sleep "$SIGNAL_GRACE"
+    signal_grace_wait "$pending"
     pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
     # The final coalesced signal set is the watcher-carried status-change
     # trigger for this home's published summary. Start it before either
