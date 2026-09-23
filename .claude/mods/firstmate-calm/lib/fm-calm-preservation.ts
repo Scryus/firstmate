@@ -1,6 +1,6 @@
-// Shared Calm policy for deciding whether mid-turn assistant text is substantive.
-// Claude Code imports this file directly, while the Pi extension reaches the same
-// implementation through its tracked symlink so both harnesses keep one threshold and rule.
+// Pi Calm policy for deciding whether mid-turn assistant text is substantive.
+// The Pi extension reaches this file through its tracked symlink; the Claude Code mod
+// hides no assistant text, so it does not use this rule.
 
 /** The minimum trimmed text length preserved from a mid-turn assistant message. */
 export const CALM_PRESERVE_MIN_CHARS = 240;

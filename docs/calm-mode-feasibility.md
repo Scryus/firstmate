@@ -691,7 +691,7 @@ Three further observations, recorded so they are not read as failures: the `ctrl
 `.claude/mods/firstmate-calm` holds the plugin: its manifest, `hooks/hooks.json` naming the one module, `hooks/register.ts` (the only file that touches `$`), and pure libraries the tests drive under Node: the sprite core the Pi extension imports (the Claude Code mod itself draws no boat), the presentation policy, and a port of `bin/fm-operational-input.sh`'s `classify` guarded by a corpus parity test.
 `.agents/skills/firstmate-calm` is a symlink to it, so the project's `.claude/skills` scan adopts it, and it carries no `SKILL.md` so other harnesses' skill loaders see nothing.
 The mod declares no command file, skill, agent, or classic hook; its function-hooks handlers independently require the exact environment opt-in before `/calm` registration or any other side effect, including when Claude Code loads the module through its rollout flag.
-Working-note and preserved-reply keys are recorded from `turn.step` per text block and seeded from `$.session.messages()` for a restored transcript, with [`calm.md`](calm.md#claude-code) owning the exact Claude Code visibility contract.
+The mod hooks no assistant text, so working notes and replies always draw as Claude Code draws them; [`calm.md`](calm.md#claude-code) owns the exact Claude Code visibility contract.
 
 ```text
 $ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin validate --strict .claude/mods/firstmate-calm
@@ -730,7 +730,7 @@ ok - Claude Code 2.1.272 (Claude Code) resumes the transcript with Calm's hidden
 
 $ bin/fm-test-run.sh tests/fm-calm-claude-mod-plugin.test.sh
 ok - Claude Code 2.1.272 (Claude Code) validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the tool, user, and assistant drawings and /calm, and never the working row
-ok - Claude Code 2.1.272 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the untouched stock working row
+ok - Claude Code 2.1.272 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, visible assistant text, and the untouched stock working row
 ```
 
 The flag-off session's settled screen, with the preference `on` on disk, drew Claude Code's own rows exactly as a session without the mod does:

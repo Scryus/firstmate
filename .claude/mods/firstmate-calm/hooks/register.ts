@@ -17,23 +17,20 @@
 // the stock working row (`Spinner`) is never hooked and draws exactly as Claude Code
 // draws it; `ToolUse`, `ToolResult`, and `ToolGroup` rows
 // draw as zero-height boxes; a `UserMessage` whose text the canonical operational-input
-// classifier recognizes draws as zero height; an `AssistantMessage` block recorded as a
-// mid-turn working note draws as zero height. Calm off returns every drawing to the
-// engine. A toggle invalidates every hooked drawing, so rows already on screen redraw.
+// classifier recognizes draws as zero height. Assistant text is never hooked, so every
+// working note and reply stays visible. Calm off returns every drawing to the engine.
+// A toggle invalidates every hooked drawing, so rows already on screen redraw.
 //
 // Loading is lazy and cached within a session: a resumed transcript or a hot reload can
 // draw restored rows before `session.start`, so every hook awaits that session's load of
-// the per-home preference and restored working notes rather than trusting a stale "off".
-// Each `session.start` clears presentation classifications and reloads the new session.
+// the per-home preference rather than trusting a stale "off".
+// Each `session.start` reloads the preference for the new session.
 import type { EngineInterface, Register, RenderElement, RenderInput } from "claude-code";
 import {
   calmPreferencePath,
   parseCalmPreference,
-  classifyRestoredTranscript,
   serializeCalmPreference,
-  stepTextIsWorkingNote,
   userTextIsOperational,
-  workingNoteKey,
 } from "../lib/fm-calm-presentation.ts";
 
 /** The slash command the mod serves, the same name as Pi's `/calm`. */
@@ -45,8 +42,6 @@ let calm = false;
 let preferencePath: string | undefined;
 let activation: Promise<boolean> | undefined;
 let loading: Promise<void> | undefined;
-const workingNotes = new Set<string>();
-const finalReplies = new Set<string>();
 
 function isActivated($: EngineInterface): Promise<boolean> {
   if (activation === undefined) {
@@ -76,13 +71,6 @@ async function load($: EngineInterface): Promise<void> {
     $.plugin.root,
   );
   calm = parseCalmPreference(await readPreference($, preferencePath));
-  try {
-    const restored = classifyRestoredTranscript(await $.session.messages());
-    for (const note of restored.workingNotes) workingNotes.add(note);
-    for (const reply of restored.finalReplies) finalReplies.add(reply);
-  } catch {
-    // A transcript that cannot be read leaves restored narration visible; nothing else changes.
-  }
   $.ui.invalidate("ui.render");
 }
 
@@ -96,8 +84,6 @@ async function resetSession($: EngineInterface): Promise<void> {
   calm = false;
   preferencePath = undefined;
   loading = undefined;
-  workingNotes.clear();
-  finalReplies.clear();
   await ensureLoaded($);
 }
 
@@ -138,43 +124,6 @@ export const register: Register = (on) => {
     return {};
   });
 
-  // Record mid-turn narration as it streams: the text blocks of a model step that
-  // stopped to call tools. Subagent steps never draw in the main transcript.
-  on("turn.step", async function* ($, e, next) {
-    if (!(await isActivated($))) {
-      const untouched = next(e);
-      for await (const chunk of untouched) yield chunk;
-      return await untouched.result;
-    }
-    const stream = next(e);
-    const blocks = new Map<number, string>();
-    for await (const chunk of stream) {
-      if (chunk.kind === "text") blocks.set(chunk.index, (blocks.get(chunk.index) ?? "") + chunk.text);
-      yield chunk;
-    }
-    const result = await stream.result;
-    if (e.agentId === undefined) {
-      let changed = false;
-      for (const text of [...blocks.values(), result.answer]) {
-        const key = workingNoteKey(text);
-        if (key === "") continue;
-        if (stepTextIsWorkingNote(result, text)) {
-          if (finalReplies.has(key) || workingNotes.has(key)) continue;
-          workingNotes.add(key);
-          changed = true;
-        } else {
-          if (!finalReplies.has(key)) {
-            finalReplies.add(key);
-            changed = true;
-          }
-          if (workingNotes.delete(key)) changed = true;
-        }
-      }
-      if (changed && calm) $.ui.invalidate("ui.render");
-    }
-    return result;
-  });
-
   on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
     if (!(await isActivated($))) return next(e);
     await ensureLoaded($);
@@ -195,12 +144,5 @@ export const register: Register = (on) => {
     if (!(await isActivated($))) return next(e);
     await ensureLoaded($);
     return calm && userTextIsOperational(e.props.text) ? hiddenRow($, e) : next(e);
-  });
-
-  on("ui.render", { component: "AssistantMessage" }, async ($, e, next) => {
-    if (!(await isActivated($))) return next(e);
-    await ensureLoaded($);
-    const key = workingNoteKey(e.props.text);
-    return calm && workingNotes.has(key) && !finalReplies.has(key) ? hiddenRow($, e) : next(e);
   });
 };
