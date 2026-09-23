@@ -1,18 +1,18 @@
-// Firstmate's harness-neutral Calm working-ship sprite.
+// Firstmate's Calm working-ship sprite, used only by the Pi extension.
 //
 // This module owns the sprite geometry, the bounce track, the two linked animation
-// cadences, and the freeze/resume state that every Calm working presentation shares.
-// It paints each frame as rows of color-tagged runs and never as bytes, so each harness
-// renders the same picture its own way: `.pi/extensions/lib/fm-calm-working-ship.ts`
-// paints the runs as standard ANSI escapes for Pi's widget, and `./fm-calm-ship-raster.ts`
-// packs them as Claude Code Raster cells. docs/calm.md owns the captain-facing contract
-// and docs/calm-mode-feasibility.md the geometry rationale.
+// cadences, and the freeze/resume state of Pi's Calm working ship.
+// It paints each frame as rows of color-tagged runs and never as bytes:
+// `.pi/extensions/lib/fm-calm-working-ship.ts` paints the runs as standard ANSI escapes
+// for Pi's widget. The Claude Code mod draws no boat and leaves its working row to the
+// engine. docs/calm.md owns the captain-facing contract and docs/calm-mode-feasibility.md
+// the geometry rationale.
 //
 // It lives inside the Claude Code plugin folder because Claude Code 2.1.272 refuses a
 // hooks-module import from outside that folder, symlinks included; the Pi extension
 // reaches it through the tracked `.pi/extensions/lib/fm-calm-working-ship-sprite.ts`
-// symlink. Nothing here imports a harness: every glyph is one terminal column under
-// both harnesses' width rules, so widths are plain character counts.
+// symlink. Nothing here imports a harness: every glyph is one terminal column,
+// so widths are plain character counts.
 //
 // Cadence: one scheduler drives two linked cadences. Every tick advances the wave by
 // one quarter-cell, and every CALM_WORKING_SHIP_TICKS_PER_MOVE-th tick moves the boat
