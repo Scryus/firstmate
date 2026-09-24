@@ -279,6 +279,61 @@ EOF
   pass "Pi redundant tool call returns ownership guidance and spawns no second child"
 }
 
+test_pi_cadence_applies_to_watcher_child() {
+  local repo home plugin out status case_name expected
+  repo="$TMP_ROOT/pi-cadence-root"
+  home="$TMP_ROOT/pi-cadence-home"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s %s\n' "${FM_POLL-unset}" "${FM_HEARTBEAT-unset}" "${FM_STALE_ESCALATE_SECS-unset}" > "${FM_ARM_LOG:?}"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  for case_name in default configured inherited invalid; do
+    rm -f "$home/config/pi-watch.json" "$TMP_ROOT/pi-cadence-$case_name.log" "$TMP_ROOT/pi-cadence-$case_name.stop"
+    case "$case_name" in
+      default) expected='5 1800 600' ;;
+      configured) printf '{"FM_POLL":7,"FM_HEARTBEAT":1900,"FM_STALE_ESCALATE_SECS":620}\n' > "$home/config/pi-watch.json"; expected='7 1900 620' ;;
+      inherited) printf '{"FM_POLL":7,"FM_HEARTBEAT":1900,"FM_STALE_ESCALATE_SECS":620}\n' > "$home/config/pi-watch.json"; expected='9 1900 620' ;;
+      invalid) printf '{"FM_POLL":7,"unknown":1}\n' > "$home/config/pi-watch.json"; expected='5 1800 600' ;;
+    esac
+    if [ "$case_name" = inherited ]; then export FM_POLL=9; fi
+    out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$TMP_ROOT/pi-cadence-$case_name.log" FM_STOP_FILE="$TMP_ROOT/pi-cadence-$case_name.stop" FM_CASE="$case_name" FM_EXPECTED="$expected" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+let tool;
+const pi = {
+  on() {}, registerCommand() {},
+  registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
+  sendUserMessage: async () => {},
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const { default: register } = await import(pathToFileURL(process.env.PLUGIN).href);
+register(pi);
+const result = await tool.execute("cadence-check", {}, undefined, undefined, {});
+if (!result.details?.ok) throw new Error(`Pi failed to arm watcher: ${JSON.stringify(result)}`);
+for (let i = 0; i < 200 && !existsSync(process.env.FM_ARM_LOG); i++) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("Watcher child did not launch");
+const actual = readFileSync(process.env.FM_ARM_LOG, "utf8").trim();
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+if (actual !== process.env.FM_EXPECTED) throw new Error(`Pi ${process.env.FM_CASE} watcher env: expected ${process.env.FM_EXPECTED}, got ${actual}`);
+console.log(`Pi ${process.env.FM_CASE} watcher child: poll=${actual.split(" ")[0]}s heartbeat=${actual.split(" ")[1]}s stale=${actual.split(" ")[2]}s`);
+EOF
+)
+    status=$?
+    if [ "$case_name" = inherited ]; then unset FM_POLL; fi
+    expect_code 0 "$status" "Pi $case_name cadence reaches the watcher child"
+    [ "$status" -eq 0 ] && printf '%s\n' "$out"
+  done
+  pass "Pi cadence defaults, local override, inherited precedence, and invalid-file fallback reach the watcher child"
+}
+
 test_pi_scheduled_retry_call_is_owned_noop() {
   local repo home plugin log out status
   repo="$TMP_ROOT/pi-scheduled-retry-root"
@@ -4316,6 +4371,12 @@ EOF
   [ -z "$out" ] || fail "OpenCode external-healthy test printed output: $out"
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
 }
+
+# Run one focused executable test without the rest of this integration suite.
+if [ -n "${FM_PI_WATCH_TEST_ONLY:-}" ]; then
+  "$FM_PI_WATCH_TEST_ONLY"
+  exit $?
+fi
 
 test_pi_extension_reports_external_healthy_watcher
 test_pi_tool_returns_agent_tool_result

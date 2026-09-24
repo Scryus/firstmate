@@ -997,13 +997,18 @@ export default function (pi: ExtensionAPI) {
 
   function piWatchCadenceEnv(config: string, inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const file = `${config}/pi-watch.json`;
+    // Pi's monitoring cadence is independent of the shared Claude watcher defaults.
+    const defaults: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries({ FM_POLL: 5, FM_HEARTBEAT: 1800, FM_STALE_ESCALATE_SECS: 600 })) {
+      if (inherited[key] === undefined) defaults[key] = String(value);
+    }
     try {
       const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected an object");
       const values = parsed as Record<string, unknown>;
       const keys = ["FM_POLL", "FM_HEARTBEAT", "FM_STALE_ESCALATE_SECS"];
       if (Object.keys(values).some((key) => !keys.includes(key))) throw new Error("unknown cadence key");
-      const result: NodeJS.ProcessEnv = {};
+      const result: NodeJS.ProcessEnv = { ...defaults };
       for (const key of keys) {
         const value = values[key];
         if (value === undefined) continue;
@@ -1015,7 +1020,7 @@ export default function (pi: ExtensionAPI) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         console.error(`watcher: invalid ${file}: ${(error as Error).message}`);
       }
-      return {};
+      return defaults;
     }
   }
 

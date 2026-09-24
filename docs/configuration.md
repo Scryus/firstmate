@@ -687,6 +687,14 @@ A fail-closed poll that already queued a wake, and a timeout, always print so th
 `FM_MAIL_CHECK_BUDGET` (default 15, valid 5..25) bounds one standing poll and is cut down to fit `FM_CHECK_TIMEOUT`.
 `bin/fm-mail-check.sh disarm` removes the standing check.
 
+## Pi watcher cadence (config/pi-watch.json)
+
+The Pi watcher child defaults to `FM_POLL=5`, `FM_HEARTBEAT=1800`, and `FM_STALE_ESCALATE_SECS=600`: it checks workers every five seconds, sets the base fleet heartbeat scan interval to thirty minutes (idle no-change scans may back off), and escalates a provably working stale worker after ten minutes.
+Shared watcher defaults and Claude settings are unchanged.
+An optional home-local `config/pi-watch.json` overrides these Pi defaults.
+Use a JSON object containing positive integer values for any of those three keys; unknown keys or invalid values reject the entire file, and inherited environment values take precedence.
+Pi reads this file when its extension starts or restarts the watcher; other primary harnesses do not read it.
+
 ## Relay (.env)
 
 Relay lets a firstmate instance answer public mentions and act on normal reversible mention requests through firstmate's normal lifecycle.
@@ -720,11 +728,6 @@ When the token is removed or empty, the next locked session-start bootstrap step
 Steady-state off is silent and writes nothing.
 Relay remains additive to non-Relay lifecycle behavior: homes without the generated artifacts keep the default watcher cadence and do not run the Relay poll.
 Its request handling remains in Relay-specific `bin/` scripts and the `fmx-respond` skill, while the watcher owns authenticated dispatch from the generated local identity shim.
-
-On Pi, an optional home-local `config/pi-watch.json` overrides only the watcher child's cadence settings without changing shared defaults or Claude settings.
-Use a JSON object containing positive integer values for `FM_POLL`, `FM_HEARTBEAT`, and/or `FM_STALE_ESCALATE_SECS`; unknown keys or invalid values reject the file, and inherited environment values take precedence.
-For example, `{"FM_POLL":5,"FM_HEARTBEAT":1800,"FM_STALE_ESCALATE_SECS":600}` checks workers every five seconds, scans the fleet every thirty minutes, and escalates a provably working stale worker after ten minutes.
-Pi applies changes when its extension starts or restarts the watcher; other primary harnesses do not read this file.
 
 `bin/fm-x-poll.sh` calls `GET /connector/poll` with `Authorization: Bearer <FMX_PAIRING_TOKEN>`.
 HTTP 204 is silent.
