@@ -687,6 +687,14 @@ A fail-closed poll that already queued a wake, and a timeout, always print so th
 `FM_MAIL_CHECK_BUDGET` (default 15, valid 5..25) bounds one standing poll and is cut down to fit `FM_CHECK_TIMEOUT`.
 `bin/fm-mail-check.sh disarm` removes the standing check.
 
+## Pi watcher cadence (config/pi-watch.json)
+
+The Pi watcher child defaults to `FM_POLL=5`, `FM_HEARTBEAT=1800`, and `FM_STALE_ESCALATE_SECS=600`: it checks workers every five seconds, sets the base fleet heartbeat scan interval to thirty minutes (idle no-change scans may back off), and escalates a provably working stale worker after ten minutes.
+Shared watcher defaults and Claude settings are unchanged.
+An optional home-local `config/pi-watch.json` overrides these Pi defaults.
+Use a JSON object containing positive integer values for any of those three keys; unknown keys or invalid values reject the entire file, and inherited environment values take precedence.
+Pi reads this file when its extension starts or restarts the watcher; other primary harnesses do not read it.
+
 ## Relay (.env)
 
 Relay lets a firstmate instance answer public mentions and act on normal reversible mention requests through firstmate's normal lifecycle.

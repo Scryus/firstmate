@@ -995,6 +995,35 @@ export default function (pi: ExtensionAPI) {
     owner.retryTimer = timer;
   }
 
+  function piWatchCadenceEnv(config: string, inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const file = `${config}/pi-watch.json`;
+    // Pi's monitoring cadence is independent of the shared Claude watcher defaults.
+    const defaults: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries({ FM_POLL: 5, FM_HEARTBEAT: 1800, FM_STALE_ESCALATE_SECS: 600 })) {
+      if (inherited[key] === undefined) defaults[key] = String(value);
+    }
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected an object");
+      const values = parsed as Record<string, unknown>;
+      const keys = ["FM_POLL", "FM_HEARTBEAT", "FM_STALE_ESCALATE_SECS"];
+      if (Object.keys(values).some((key) => !keys.includes(key))) throw new Error("unknown cadence key");
+      const result: NodeJS.ProcessEnv = { ...defaults };
+      for (const key of keys) {
+        const value = values[key];
+        if (value === undefined) continue;
+        if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error(`${key} must be a positive integer`);
+        if (inherited[key] === undefined) result[key] = String(value);
+      }
+      return result;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error(`watcher: invalid ${file}: ${(error as Error).message}`);
+      }
+      return defaults;
+    }
+  }
+
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
     if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
     const ownership = lockOwnership();
@@ -1021,6 +1050,7 @@ export default function (pi: ExtensionAPI) {
     const id = ++owner.seq;
     const env = {
       ...process.env,
+      ...piWatchCadenceEnv(config, process.env),
       FM_HOME: fmHome,
       FM_ROOT_OVERRIDE: fmRoot,
       FM_CONFIG_OVERRIDE: config,
