@@ -4609,15 +4609,22 @@ CALM_PI_EXT=
 CALM_CLAUDE_ENV=' '
 CALM_CLAUDE_PLUGIN=' '
 CALM_HOME_PREFIX=
-if [ "$KIND" != secondmate ] && [ -f "$CONFIG/calm" ] && [ "$(tr -d '[:space:]' < "$CONFIG/calm")" = on ]; then
-  CALM_HOME_PREFIX="FM_HOME=$(shell_quote "$FM_HOME") "
-  if [ "$HARNESS" = claude ]; then
-    CALM_CLAUDE_ENV=' CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 '
-    if [ ! -e "$WT/.claude/skills/firstmate-calm" ]; then
-      CALM_CLAUDE_PLUGIN=" --plugin-dir $(shell_quote "$FM_ROOT/.claude/mods/firstmate-calm") "
+if [ "$KIND" != secondmate ] && [ -f "$CONFIG/calm" ]; then
+  calm_preference=$(tr -d '[:space:]' < "$CONFIG/calm")
+  if [ "$calm_preference" = on ] || [ "$calm_preference" = max ]; then
+    CALM_HOME_PREFIX="FM_HOME=$(shell_quote "$FM_HOME") "
+    if [ -n "${FM_CONFIG_OVERRIDE:-}" ]; then
+      calm_config=$(resolve_directory_input FM_CONFIG_OVERRIDE "$CONFIG") || exit 1
+      CALM_HOME_PREFIX="${CALM_HOME_PREFIX}FM_CONFIG_OVERRIDE=$(shell_quote "$calm_config") "
     fi
-  elif { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; } && [ ! -f "$WT/.pi/extensions/fm-calm.ts" ]; then
-    CALM_PI_EXT=" -e $(shell_quote "$FM_ROOT/.pi/extensions/fm-calm.ts")"
+    if [ "$HARNESS" = claude ]; then
+      CALM_CLAUDE_ENV=' CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 '
+      if [ ! -e "$WT/.claude/skills/firstmate-calm" ]; then
+        CALM_CLAUDE_PLUGIN=" --plugin-dir $(shell_quote "$FM_ROOT/.claude/mods/firstmate-calm") "
+      fi
+    elif { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; } && [ ! -f "$WT/.pi/extensions/fm-calm.ts" ]; then
+      CALM_PI_EXT=" -e $(shell_quote "$FM_ROOT/.pi/extensions/fm-calm.ts")"
+    fi
   fi
 fi
 MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")

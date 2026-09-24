@@ -904,6 +904,34 @@ test_calm_preference_reaches_supported_ship_launches() {
   pass "Calm-enabled Pi and Claude ship workers receive the tracked presentation extension"
 }
 
+test_legacy_calm_with_config_override_reaches_workers() {
+  local harness rec id out status launch config
+  for harness in pi claude; do
+    id="profile-calm-override-$harness-z18"
+    rec=$(make_spawn_case "profile-calm-override-$harness" "$harness" "$id")
+    read_case_record "$rec"
+    config="$CASE_DIR/alternate config"
+    mkdir -p "$config"
+    printf 'max\n' > "$config/calm"
+    out=$(FM_CONFIG_OVERRIDE="$config" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    status=$?
+    expect_code 0 "$status" "legacy Calm $harness spawn with config override should succeed"
+    launch=$(cat "$LAUNCH_LOG")
+    assert_contains "$launch" "FM_HOME='$HOME_DIR' FM_CONFIG_OVERRIDE='$config'" \
+      "$harness worker did not inherit the effective Calm config"
+    if [ "$harness" = pi ]; then
+      assert_contains "$launch" "-e '$ROOT/.pi/extensions/fm-calm.ts'" \
+        "legacy Calm Pi worker did not load the tracked extension"
+    else
+      assert_contains "$launch" "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1" \
+        "legacy Calm Claude worker did not enable function hooks"
+      assert_contains "$launch" "--plugin-dir '$ROOT/.claude/mods/firstmate-calm'" \
+        "legacy Calm Claude worker did not load the tracked plugin"
+    fi
+  done
+  pass "legacy Calm preference and config override reach Pi and Claude workers"
+}
+
 test_claude_forwards_firstmate_config_dir_when_set() {
   local rec id out status launch
   id=profile-claude-cfgdir-z17
@@ -1550,6 +1578,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
 test_calm_preference_reaches_supported_ship_launches
+test_legacy_calm_with_config_override_reaches_workers
 test_claude_forwards_firstmate_config_dir_when_set
 test_lavish_server_address_is_exported_to_worker_launch
 test_lavish_absent_config_preserves_destination_ambient

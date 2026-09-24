@@ -26,7 +26,7 @@ A working note is briefly visible while it streams before its settled row collap
 The narration is hidden only from the live transcript presentation, and remains in the message, model context, session storage, and `/export` artifacts.
 The operational inputs Calm classifies remain ordinary user-role messages, while Pi's transcript layout renders their complete rows at zero height.
 The session-start nudge remains on its existing non-displayed custom-message path.
-When the effective Firstmate home has `config/calm` set to `on`, new Pi and pi-signed ship/scout workers load this tracked extension directly, and Claude Code workers load the tracked mod with function hooks enabled for that process; an extension already auto-discovered from the task project is not added a second time.
+When the effective Firstmate config has `calm` set to `on` (or the legacy `max`), new Pi and pi-signed ship/scout workers load this tracked extension directly, and Claude Code workers load the tracked mod with function hooks enabled for that process; an extension already auto-discovered from the task project is not added a second time. Workers inherit the effective Calm config directory when overridden.
 Other worker harnesses, including omp, do not receive Calm because their supported presentation integration is not available through this launch path.
 Secondmates are not task workers and do not inherit this launch behavior.
 
@@ -71,7 +71,7 @@ FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh
 
 Calm on Claude Code is the `firstmate-calm` mod under `.claude/mods/firstmate-calm`: a Claude Code plugin whose whole behavior lives in one function-hooks module.
 Claude Code's early-access function-hooks surface is off by default and can load modules through its rollout flag or per session with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; the mod independently requires that environment variable to equal `1` before doing anything.
-Firstmate never sets that flag in any project or user settings; enabling it is each captain's own explicit opt-in, and without that exact value the mod is a complete no-op even if Claude Code's rollout flag loads the module: there is no `/calm` command, no preference or transcript read, no timer, and every drawing stays exactly as Claude Code draws it, whatever `config/calm` says.
+Firstmate never sets that flag in any project or user settings; it sets the flag only for Calm-enabled Claude task-worker processes. For other sessions, enabling it remains each captain's explicit opt-in. Without that exact value the mod is a complete no-op even if Claude Code's rollout flag loads the module: there is no `/calm` command, no preference or transcript read, no timer, and every drawing stays exactly as Claude Code draws it, whatever `config/calm` says.
 The trusted project auto-loads the mod through the `.claude/skills/firstmate-calm` entry (a symlink into `.claude/mods`), so no `--plugin-dir` or marketplace install is needed.
 
 With the flag on, the mod registers `/calm`, which toggles the same per-home preference Pi's `/calm` uses, so one choice applies on both harnesses.
