@@ -26,6 +26,9 @@ A working note is briefly visible while it streams before its settled row collap
 The narration is hidden only from the live transcript presentation, and remains in the message, model context, session storage, and `/export` artifacts.
 The operational inputs Calm classifies remain ordinary user-role messages, while Pi's transcript layout renders their complete rows at zero height.
 The session-start nudge remains on its existing non-displayed custom-message path.
+When the effective Firstmate home has `config/calm` set to `on`, new Pi and pi-signed ship/scout workers load this tracked extension directly, and Claude Code workers load the tracked mod with function hooks enabled for that process; an extension already auto-discovered from the task project is not added a second time.
+Other worker harnesses, including omp, do not receive Calm because their supported presentation integration is not available through this launch path.
+Secondmates are not task workers and do not inherit this launch behavior.
 
 Outside Pi's same-name built-in override collision described below, Calm changes presentation only.
 Calm's built-in wrappers preserve Pi's execution behavior, and input delivery, ordering, model context, session storage, diagnostics, and `/export` and `/share` operation remain unchanged.

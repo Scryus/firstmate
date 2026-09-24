@@ -870,6 +870,40 @@ test_batch_forwards_shared_profile_flags() {
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
 }
 
+test_calm_preference_reaches_supported_ship_launches() {
+  local rec id out status launch
+  id=profile-calm-pi-z18
+  rec=$(make_spawn_case profile-calm-pi pi "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/config"
+  printf 'on\n' > "$HOME_DIR/config/calm"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "calm-enabled Pi spawn should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "FM_HOME='$HOME_DIR'" \
+    "Pi worker did not retain the primary Calm preference home"
+  assert_contains "$launch" "-e '$ROOT/.pi/extensions/fm-calm.ts'" \
+    "Pi worker did not load the tracked Calm extension"
+
+  id=profile-calm-claude-z18
+  rec=$(make_spawn_case profile-calm-claude claude "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/config"
+  printf 'on\n' > "$HOME_DIR/config/calm"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "calm-enabled Claude spawn should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "FM_HOME='$HOME_DIR'" \
+    "Claude worker did not retain the primary Calm preference home"
+  assert_contains "$launch" "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1" \
+    "Claude worker did not receive the required per-launch hooks opt-in"
+  assert_contains "$launch" "--plugin-dir '$ROOT/.claude/mods/firstmate-calm'" \
+    "Claude worker did not load the tracked Calm plugin"
+  pass "Calm-enabled Pi and Claude ship workers receive the tracked presentation extension"
+}
+
 test_claude_forwards_firstmate_config_dir_when_set() {
   local rec id out status launch
   id=profile-claude-cfgdir-z17
@@ -1515,6 +1549,7 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
+test_calm_preference_reaches_supported_ship_launches
 test_claude_forwards_firstmate_config_dir_when_set
 test_lavish_server_address_is_exported_to_worker_launch
 test_lavish_absent_config_preserves_destination_ambient
