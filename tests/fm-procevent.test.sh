@@ -999,11 +999,10 @@ PATH="$ADOPT_BIN:$PATH" FM_HOME="$HNOMETA" \
   || fail "a board was refused for a task that does have an endpoint"
 pass "a worker-owned board is only armed for an owner its feedback can reach"
 
-# --- end-user-aligned regression: an open round is re-delivered --------------
-# Filing the steering note away is not acknowledging the round. A worker that
-# moved the note aside and then crashed still owes the round, so the next
-# reconcile has to put a live note back in its inbox rather than ring an empty
-# one.
+# --- end-user-aligned regression: a filed-away note stays filed away ---------
+# Filing the steering note away means the worker took delivery. Reconcile keeps
+# the round unacknowledged until the worker concludes or re-arms it, but it
+# must not move the note back into the inbox, which would ring the worker again.
 HREDELIVER="$TMP_ROOT/hredeliver"; new_home "$HREDELIVER"
 REDELIVER_ART="$TMP_ROOT/redeliver-board.html"
 printf '<h1>redeliver</h1>\n' > "$REDELIVER_ART"
@@ -1018,11 +1017,13 @@ PATH="$ADOPT_BIN:$PATH" pe "$HREDELIVER" start "$redeliver_id" >/dev/null 2>&1 |
 mv "$HREDELIVER/state/worker-6.inbox/001.msg" \
   "$HREDELIVER/state/worker-6.inbox/handled/001.msg"
 PATH="$ADOPT_BIN:$PATH" pe "$HREDELIVER" reconcile >/dev/null 2>&1 || true
-[ -f "$HREDELIVER/state/worker-6.inbox/001.msg" ] \
-  || fail "a round still open after its note was filed away was never re-delivered"
+[ ! -f "$HREDELIVER/state/worker-6.inbox/001.msg" ] \
+  || fail "a note the worker filed away was moved back into its inbox"
+[ -f "$HREDELIVER/state/worker-6.inbox/handled/001.msg" ] \
+  || fail "reconcile removed the note the worker filed away"
 [ ! -f "$HREDELIVER/state/procevent-inbox/$redeliver_id.1.handled" ] \
-  || fail "re-delivering the note acknowledged the round it is still asking for"
-pass "an open worker-owned round is re-delivered after its note was filed away"
+  || fail "reconcile acknowledged a round the owner has not concluded"
+pass "a worker-owned note filed away stays filed away while its round stays open"
 
 # --- end-user-aligned regression: a conclude only closes its own round --------
 # Acknowledging a terminal round retires the board it belongs to. The same
@@ -4274,5 +4275,55 @@ kill -0 -"$CRASH_PID" 2>/dev/null \
   || fail "a refused retirement signalled the leaderless group anyway"
 pass "a group whose leader died to something else is still refused, not signalled"
 kill -KILL -"$CRASH_PID" 2>/dev/null || true
+
+# A task-owned round rings its worker once, when the feedback record is first
+# filed. Every later reconcile republishes the unacknowledged round but must not
+# ring again, and a record the worker moved into handled/ stays there unrung.
+RING_BIN=$(fm_fakebin "$TMP_ROOT/ring-stub")
+RING_LOG="$TMP_ROOT/ring-stub.log"
+cat > "$RING_BIN/tmux" <<'SH'
+#!/usr/bin/env bash
+# Stand-in pane: reports a live idle window and records every typed line.
+printf '%s\n' "$*" >> "$RING_LOG"
+case "$1" in
+  display-message) printf '%%1\n' ;;
+  list-panes|list-windows) printf 'fmtest:fm-ring-worker\n' ;;
+esac
+exit 0
+SH
+chmod +x "$RING_BIN/tmux"
+ring_count() { grep -c 'Firstmate instruction waiting' "$RING_LOG" 2>/dev/null || true; }
+HRING="$TMP_ROOT/hring"; new_home "$HRING"
+new_task_endpoint "$HRING" ring-worker
+mkdir -p "$HRING/state/procevent-inbox"
+printf 'round one feedback\n' > "$HRING/state/procevent-inbox/ring-src.1.result"
+printf 'lavish\n' > "$HRING/state/procevent-inbox/ring-src.1.adapter"
+printf 'ring-worker\n' > "$HRING/state/procevent-inbox/ring-src.1.owner-task"
+chmod 0600 "$HRING/state/procevent-inbox/ring-src.1".*
+for _ in 1 2 3; do
+  RING_LOG="$RING_LOG" PATH="$RING_BIN:$PATH" pe "$HRING" reconcile >/dev/null 2>&1 || true
+done
+[ -f "$HRING/state/ring-worker.inbox/001.msg" ] \
+  || fail "the owned round never reached the worker inbox"
+[ "$(ring_count)" -le 1 ] \
+  || fail "repeated reconcile rang the worker $(ring_count) times for one unacknowledged round"
+[ -f "$HRING/state/ring-worker.inbox/001.msg" ] && [ ! -e "$HRING/state/ring-worker.inbox/002.msg" ] \
+  || fail "repeated reconcile filed a second record for the same round"
+pass "a repeated reconcile of one unacknowledged round rings at most once"
+
+before=$(ring_count)
+mv "$HRING/state/ring-worker.inbox/001.msg" "$HRING/state/ring-worker.inbox/handled/001.msg"
+for _ in 1 2 3; do
+  RING_LOG="$RING_LOG" PATH="$RING_BIN:$PATH" pe "$HRING" reconcile >/dev/null 2>&1 || true
+done
+[ -f "$HRING/state/ring-worker.inbox/handled/001.msg" ] \
+  || fail "reconcile removed the handled record"
+[ ! -e "$HRING/state/ring-worker.inbox/001.msg" ] \
+  || fail "reconcile moved a handled record back into the active inbox"
+[ "$(ring_count)" = "$before" ] \
+  || fail "reconcile rang the worker for a record it had already handled"
+[ ! -e "$HRING/state/procevent-inbox/ring-src.1.handled" ] \
+  || fail "reconcile acknowledged a round the owner had not concluded"
+pass "a handled feedback record stays handled and is never rung again"
 
 printf '\nall procevent tests passed\n'

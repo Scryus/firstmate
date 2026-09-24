@@ -754,9 +754,12 @@ cmd_register_extension() {
 # events - and it republishes on every call regardless of any earlier
 # publication, so a result stays eligible for re-announcement across restarts
 # and drains until `fm_procevent_mark_handled` records it.
+# A task-owned round rings the owner's doorbell only when its feedback record is
+# first filed; a repeat finds the record, active or handled, and never rings or
+# moves it, so re-rings of an active record belong to the watcher's ladder.
 publish_result() {  # <result-file>
   local result=$1 id seq adapter line status=1 owner_task='' message='' record=''
-  local ring_backend ring_target ring_meta active
+  local ring_backend ring_target ring_meta inbox_dir known filed_new=0
   id=$(fm_procevent_result_source_id "$result")
   seq=$(fm_procevent_result_sequence "$result")
   fm_procevent_source_id_valid "$id" || return 1
@@ -784,20 +787,24 @@ publish_result() {  # <result-file>
         unset FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD
         message="Lavish review feedback is captured for task $owner_task at $result. Read it with bin/fm-procevent-lavish.sh read $result, apply the round, and re-arm the board with the reply."
       fi
+      # Only a record this call filed is new; an existing one, active or
+      # handled, is already delivered and stays where the worker left it.
+      inbox_dir=$(fm_task_inbox_dir "$STATE" "$owner_task")
+      known=$(ls "$inbox_dir"/*.msg "$inbox_dir"/handled/*.msg 2>/dev/null || true)
       record=$(fm_task_inbox_write_idempotent "$STATE" "$owner_task" "$message" 2>/dev/null || true)
-      case "$record" in
-        */handled/*)
-          active=${record%/handled/*}/${record##*/}
-          if mv -- "$record" "$active" 2>/dev/null; then
-            record=$active
-          else
-            record=''
-          fi
-          ;;
-      esac
+      if [ -n "$record" ]; then
+        case "
+$known
+" in
+          *"
+$record
+"*) ;;
+          *) filed_new=1 ;;
+        esac
+      fi
       [ -n "$record" ] && status=0
       fm_procevent_source_lock_release "$id"
-      if [ "$status" -eq 0 ]; then
+      if [ "$status" -eq 0 ] && [ "$filed_new" -eq 1 ]; then
         ring_meta="$STATE/$owner_task.meta"
         if [ -f "$ring_meta" ] && [ ! -L "$ring_meta" ]; then
           ring_backend=$(fm_backend_of_meta "$ring_meta" 2>/dev/null || true)
