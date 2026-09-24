@@ -691,7 +691,7 @@ Three further observations, recorded so they are not read as failures: the `ctrl
 `.claude/mods/firstmate-calm` holds the plugin: its manifest, `hooks/hooks.json` naming the one module, `hooks/register.ts` (the only file that touches `$`), and pure libraries the tests drive under Node: the sprite core the Pi extension imports (the Claude Code mod itself draws no boat), the presentation policy, and a port of `bin/fm-operational-input.sh`'s `classify` guarded by a corpus parity test.
 `.agents/skills/firstmate-calm` is a symlink to it, so the project's `.claude/skills` scan adopts it, and it carries no `SKILL.md` so other harnesses' skill loaders see nothing.
 The mod declares no command file, skill, agent, or classic hook; its function-hooks handlers independently require the exact environment opt-in before `/calm` registration or any other side effect, including when Claude Code loads the module through its rollout flag.
-The mod hooks no assistant text, so working notes and replies always draw as Claude Code draws them; [`calm.md`](calm.md#claude-code) owns the exact Claude Code visibility contract.
+As of 2026-09-15 the mod hooked no assistant text, so working notes and replies drew as Claude Code draws them (the 2026-09-24 record below adds grey earlier rows); [`calm.md`](calm.md#claude-code) owns the exact Claude Code visibility contract.
 
 ```text
 $ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin validate --strict .claude/mods/firstmate-calm
@@ -750,3 +750,14 @@ The flag-off session's settled screen, with the preference `on` on disk, drew Cl
 The Claude Code mod no longer hooks the `Spinner` component: the stock working row draws exactly as Claude Code draws it while Calm is on, and the mod draws no boat.
 Its Raster packing, theme-color reading, repaint timer, and boat tests were removed, and the sprite core stays only because the Pi extension imports it.
 Every other Calm hiding is unchanged, and the dated records above describe the mod as it was on their dates.
+
+## 2026-09-24 Claude Code fade of earlier rows and the Stop hook notice
+
+Claude Code 2.1.281 rows carry no order, so the mod numbers each row id the first time it draws and keeps one boundary in that numbering.
+A `prompt.submit` hook moves the boundary and invalidates before the new prompt row draws, and a restored transcript is seeded from the stored genuine message count.
+Rows before the boundary draw as dimmed `Markdown`, because a stock drawing cannot be dimmed in place and an engine node inside `Text` is refused.
+Tool rows stay hidden as before, so no dimmed tool-row format exists.
+The `Stop hook feedback` row is a `UserMessage` with origin `task-notification`, and it hides at zero height through the existing user-row path.
+Frame sampling at 30 ms during a new prompt and a resume showed no bright frame before the grey one.
+The pure boundary logic lives in `.claude/mods/firstmate-calm/lib/fm-calm-fade.ts` with unit tests, and `docs/calm.md` owns the contract.
+The opt-in live guard gained a fullscreen fade case; it was not run to the end on this date because the nested Haiku session hit its usage limit.

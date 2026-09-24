@@ -5,7 +5,7 @@ It is fully supported on Pi, and available on Claude Code behind that harness's 
 It is off by default, and the last `/calm` choice persists for the effective Firstmate home across session starts and resumes on either harness, through the one shared preference file [`configuration.md`](configuration.md#calm-preference-configcalm) owns.
 On Pi, Calm evaluates each settled assistant text block from a model step that stopped to call tools, or exhausted its token limit while carrying tool calls.
 It hides a block only when its raw text contains no newline and its trimmed length is below `CALM_PRESERVE_MIN_CHARS` (240); a newline or at least 240 trimmed characters preserves the block as substantive captain-facing content, while streaming text and the genuine reply that ends a response remain visible.
-On Claude Code, Calm hides no assistant text: every working note and reply stays visible.
+On Claude Code, Calm hides no assistant text: every working note and reply stays visible, and the ones before your latest message draw grey.
 
 ## Pi
 
@@ -76,7 +76,14 @@ The toggle answers with a transient "Calm on" or "Calm off" notice under the pro
 While Calm is on, the stock working row (`Sauteing... (12s · 300 tokens)`) is left exactly as Claude Code draws it: the mod has no hook on it and draws no boat or other animation.
 Tool rows, tool result blocks, and folded tool groups draw at zero height, so a turn that used tools takes the same space as one that did not.
 A user row whose text the canonical operational-input parser recognizes, a Firstmate session-start, watcher, turn-end guard, away-supervisor, launch-brief, or branch-outcome envelope, a from-firstmate routed message, or one of the narrow pre-protocol shapes kept for old transcripts, draws at zero height; every other user row, including near misses such as a quoted or ASCII-only marker, stays visible.
-Assistant text is never hooked, so every working note and reply draws exactly as Claude Code draws it, including when `claude --continue` restores the transcript.
+Assistant text is never hidden, so every working note and reply stays visible, including when `claude --continue` restores the transcript.
+While Calm is on, every user and assistant row before your latest genuine message draws grey, and the latest message and everything after it draw as Claude Code draws them.
+The boundary moves when you press Enter, before the new row draws, so no row draws bright and is then greyed.
+A restored transcript is seeded from its stored messages, so its first painted frame is already correct.
+Operational and background-task rows never move the boundary.
+Grey rows use dimmed Markdown, so they lose Claude Code's grey highlight bar on your prompts, and table borders and bold text stay bright.
+The notice Claude Code draws when an async Stop hook rewakes the session (`Stop hook feedback`) draws at zero height.
+The grey-out needs the fullscreen layout, because the main-screen layout keeps earlier rows in terminal scrollback that cannot be redrawn.
 Toggling Calm redraws every hooked row already on screen, so rows drawn before the toggle hide or restore retroactively, and the preference is read before the first row draws.
 Nothing is rewritten: hidden rows remain in the message, model context, session storage, and exports, and the mod never touches tool execution, prompts, or the stored transcript.
 

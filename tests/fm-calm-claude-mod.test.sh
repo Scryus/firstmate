@@ -7,6 +7,7 @@
 #   - the sprite core the Pi extension imports from the mod: the Pi widget's rendering
 #     is byte-for-byte the shared frame painted with standard ANSI codes;
 #   - the pure presentation policy: home resolution, preference values, operational rows;
+#   - the fade-history policy: row order, the boundary, restore seeding, and text limits;
 #   - the operational-input classifier's parity with bin/fm-operational-input.sh over
 #     envelopes the shell owner itself encodes, its legacy shapes, and near misses.
 # The engine-bound behavior runs under tests/fm-calm-claude-mod-plugin.test.sh and the
@@ -170,6 +171,103 @@ JS
   pass "the Calm policy resolves the shared preference exactly as Pi does, reads on, max, and off as Pi does, and recognizes operational user rows"
 }
 
+test_fade_policy() {
+  local out
+  cat >"$TMP_ROOT/fade.mjs" <<JS
+import { pathToFileURL } from "node:url";
+const fade = await import(pathToFileURL(${MOD@Q} + "/lib/fm-calm-fade.ts").href);
+const check = (condition, message) => { if (!condition) throw new Error(message); };
+const operational = (text) => text.startsWith("\u2063FIRSTMATE_OP:");
+
+// Row classification: only the person's own stored composer row counts as a message.
+check(fade.isGenuineUserRow({ kind: "composer" }, "u1"), "a composer row is genuine");
+check(!fade.isGenuineUserRow({ kind: "composer" }, "placeholder"), "the optimistic row is never genuine");
+check(!fade.isGenuineUserRow({ kind: "task-notification" }, "u1"), "a notification is not genuine");
+check(!fade.isGenuineUserRow({ kind: "peer" }, "u1"), "another session's message is not genuine");
+check(fade.isStopHookFeedbackRow({ kind: "task-notification" }, "Stop hook feedback"), "the wake notice");
+check(!fade.isStopHookFeedbackRow({ kind: "composer" }, "Stop hook feedback"), "the person's own words are not the notice");
+check(!fade.isStopHookFeedbackRow({ kind: "task-notification" }, "Build finished"), "another notification");
+
+// Submissions that open a phase before their row draws.
+const submit = (text, extra = {}) => fade.submitOpensPhase({ text, origin: { kind: "composer" }, ...extra });
+check(submit("hello"), "an idle Enter opens a phase");
+check(!submit("   "), "an empty prompt opens nothing");
+check(!submit("/loop 5m x"), "a slash command opens nothing");
+check(!submit("hello", { turnId: "t1" }), "a prompt over a running turn opens nothing");
+check(!fade.submitOpensPhase({ text: "hi", origin: { kind: "plugin" } }), "a plugin prompt opens nothing");
+
+// The tracker: first-draw order, one boundary.
+{
+  const t = fade.createFadeTracker();
+  for (const id of ["u1", "a1"]) t.observe(id);
+  check(!t.isOld("u1") && !t.isOld("a1"), "the first phase is current");
+  check(t.openPhase() === true, "the first submission moves the boundary");
+  check(t.isOld("u1") && t.isOld("a1"), "earlier rows are old after a submission");
+  check(!t.isOld("placeholder"), "the optimistic row is never old");
+  t.observe("u2");
+  check(!t.isOld("u2"), "the new row is current");
+  check(t.genuineRowDrawn("u2") === false, "the row that a submission announced needs no redraw");
+  check(t.openPhase() === true && t.isOld("u2"), "the next submission ages the previous message");
+  check(t.openPhase() === false, "a repeated submission changes nothing");
+}
+{
+  // A prompt typed over a turn: its row moves the boundary when it draws.
+  const t = fade.createFadeTracker();
+  for (const id of ["u1", "a1", "a2"]) t.observe(id);
+  check(t.genuineRowDrawn("u2") === true, "a row nobody announced moves the boundary");
+  check(t.isOld("u1") && t.isOld("a1") && t.isOld("a2") && !t.isOld("u2"), "everything before that row is old");
+}
+{
+  // Restore: rows before the last genuine message are old from their first draw.
+  const t = fade.createFadeTracker();
+  t.beginRestore(2);
+  t.observe("u1");
+  check(t.genuineRowDrawn("u1") === false && t.isOld("u1"), "the first stored message is old");
+  t.observe("a1");
+  check(t.isOld("a1"), "its reply is old");
+  t.observe("u2");
+  t.genuineRowDrawn("u2");
+  check(!t.isOld("u2"), "the last stored message is current");
+  t.observe("a2");
+  check(!t.isOld("a2") && t.isOld("a1") && t.isOld("u1"), "the last reply is current, earlier rows stay old");
+  t.genuineRowDrawn("u2");
+  check(!t.isOld("u2"), "drawing the last message twice counts it once");
+}
+{
+  const t = fade.createFadeTracker();
+  t.beginRestore(3);
+  t.observe("u1");
+  t.genuineRowDrawn("u1");
+  check(t.isOld("u1"), "counting ahead keeps rows old");
+  t.openPhase();
+  t.observe("u9");
+  check(!t.isOld("u9"), "a real submission ends an overcounted restore");
+}
+
+// Counting stored genuine messages.
+const rows = [
+  { role: "user", text: "first" },
+  { role: "assistant", text: "reply" },
+  { role: "user", text: "", toolResults: [{}] },
+  { role: "user", text: "second" },
+  { role: "user", text: "<task-notification>\nStop hook feedback</task-notification>" },
+  { role: "user", text: "\u2063FIRSTMATE_OP: v1 watcher: x" },
+  { role: "user", text: "<div> is a tag" },
+];
+check(fade.countGenuineUserMessages(rows, operational) === 3, "counts typed messages only");
+check(fade.countGenuineUserMessages([], operational) === 0, "an empty transcript counts zero");
+
+// Text one Markdown element accepts.
+check(fade.markdownSafeText("a\u0007b\r\nc\td") === "ab\nc\td", "control characters are dropped, tab and newline kept");
+const long = fade.markdownSafeText("x".repeat(20000));
+check(long.length === fade.MARKDOWN_TEXT_LIMIT && long.endsWith("\u2026"), "long text is cut to the element limit");
+console.log("fade-ok");
+JS
+  out=$(run_node "$TMP_ROOT/fade.mjs" 2>&1) || fail "fade policy: $out"
+  assert_contains "$out" "fade-ok" "the fade policy check did not complete"
+  pass "the Calm fade policy orders rows by first draw, moves one boundary on submissions and on unannounced rows, seeds a restore, and never counts operational, notification, or optimistic rows as a message"
+}
+
 # The classifier parity corpus: envelopes the shell owner encodes itself, its legacy
 # shapes, and near misses. Each case is one file so multi-line bodies stay exact.
 canonical_generic_kinds() {
@@ -280,4 +378,5 @@ JS
 test_plugin_shape
 test_shared_sprite_and_pi_rendering
 test_presentation_policy
+test_fade_policy
 test_classifier_parity_with_shell_owner

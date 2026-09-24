@@ -6,11 +6,13 @@ import {
   calmCommand,
   fromFirstmate,
   HOME,
+  isGrey,
   isHidden,
   isStock,
   operational,
   PREFERENCE,
   spinner,
+  submission,
   toolGroup,
   toolResult,
   toolUse,
@@ -226,9 +228,176 @@ describe("assistant text", () => {
       ],
     });
     await $.session.start(sessionStart);
+    await $.ui.render(userMessage("go", "u0"));
     expect(isStock(await $.ui.render(assistantMessage("Checking.")))).toBe(true);
     expect(isStock(await $.ui.render(assistantMessage("Narration before a tool row")))).toBe(true);
     expect(isStock(await $.ui.render(assistantMessage("The final answer")))).toBe(true);
     expect(isHidden(await $.ui.render(toolUse()))).toBe(true);
+  });
+});
+
+describe("fade history", () => {
+  const stopHookNotice = "Stop hook feedback";
+
+  test("draws every row as the engine does while Calm is off", async ($, on) => {
+    world(on);
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.ui.render(assistantMessage("reply", "a1"));
+    await $.prompt.submit(submission("second"));
+    expect(isStock(await $.ui.render(userMessage("second", "u2")))).toBe(true);
+    expect(isStock(await $.ui.render(userMessage("first", "u1")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("reply", "a1")))).toBe(true);
+  });
+
+  test("keeps the first conversation phase current until a later message is sent", async ($, on) => {
+    const { journal } = world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    expect(isStock(await $.ui.render(userMessage("first", "u1")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("reply", "a1")))).toBe(true);
+    expect(journal.invalidations.filter((event) => event === "ui.render")).toHaveLength(1);
+  });
+
+  test("greys every earlier row from the submission, before the new row draws", async ($, on) => {
+    const { journal } = world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.ui.render(assistantMessage("reply", "a1"));
+    const redraws = journal.invalidations.length;
+    await $.prompt.submit(submission("second"));
+    // The redraw is requested by the submission itself, ahead of the new row's first draw.
+    expect(journal.invalidations.length).toBe(redraws + 1);
+    expect(isGrey(await $.ui.render(userMessage("first", "u1")))).toBe(true);
+    expect(isGrey(await $.ui.render(assistantMessage("reply", "a1")))).toBe(true);
+    // The optimistic row and the stored row are current, and drawing them asks for nothing more.
+    expect(isStock(await $.ui.render(userMessage("second", "placeholder")))).toBe(true);
+    expect(isStock(await $.ui.render(userMessage("second", "u2")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("answer", "a2")))).toBe(true);
+    expect(journal.invalidations.length).toBe(redraws + 1);
+  });
+
+  test("moves the boundary again on each later message", async ($, on) => {
+    world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.prompt.submit(submission("second"));
+    await $.ui.render(userMessage("second", "u2"));
+    await $.ui.render(assistantMessage("answer", "a2"));
+    await $.prompt.submit(submission("third"));
+    await $.ui.render(userMessage("third", "u3"));
+    expect(isGrey(await $.ui.render(userMessage("second", "u2")))).toBe(true);
+    expect(isGrey(await $.ui.render(assistantMessage("answer", "a2")))).toBe(true);
+    expect(isStock(await $.ui.render(userMessage("third", "u3")))).toBe(true);
+  });
+
+  test("never numbers the optimistic row, which every prompt reuses", async ($, on) => {
+    world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.prompt.submit(submission("first"));
+    expect(isStock(await $.ui.render(userMessage("first", "placeholder")))).toBe(true);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.prompt.submit(submission("second"));
+    expect(isStock(await $.ui.render(userMessage("second", "placeholder")))).toBe(true);
+  });
+
+  test("moves the boundary when the row draws for a prompt typed over a turn or a slash command", async ($, on) => {
+    const { journal } = world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.ui.render(assistantMessage("reply", "a1"));
+    const redraws = journal.invalidations.length;
+    await $.prompt.submit(submission("queued", { turnId: "t1" }));
+    await $.prompt.submit(submission("/loop 5m check"));
+    expect(journal.invalidations.length).toBe(redraws);
+    expect(isStock(await $.ui.render(assistantMessage("reply", "a1")))).toBe(true);
+    await $.ui.render(assistantMessage("late reply", "a1b"));
+    expect(isStock(await $.ui.render(userMessage("queued", "u2")))).toBe(true);
+    expect(journal.invalidations.length).toBe(redraws + 1);
+    expect(isGrey(await $.ui.render(assistantMessage("late reply", "a1b")))).toBe(true);
+  });
+
+  test("never lets an operational row or a notification move the boundary", async ($, on) => {
+    const { journal } = world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.ui.render(assistantMessage("reply", "a1"));
+    const redraws = journal.invalidations.length;
+    expect(isHidden(await $.ui.render(userMessage(operational("watcher", "signal: x"), "op1")))).toBe(true);
+    expect(isStock(await $.ui.render(userMessage("build finished", "n1", { kind: "task-notification" })))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("reply", "a1")))).toBe(true);
+    expect(journal.invalidations.length).toBe(redraws);
+  });
+
+  test("hides the Stop hook wake notice before it ever draws while on, and only then", async ($, on) => {
+    world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    expect(isHidden(await $.ui.render(userMessage(stopHookNotice, "stop1", { kind: "task-notification" })))).toBe(true);
+    // A genuine prompt with the same words is the person's own message.
+    expect(isStock(await $.ui.render(userMessage(stopHookNotice, "u1")))).toBe(true);
+    await $.command.run(calmCommand());
+    expect(isStock(await $.ui.render(userMessage(stopHookNotice, "stop1", { kind: "task-notification" })))).toBe(true);
+  });
+
+  test("restores a transcript with every row before the last message grey from its first draw", async ($, on) => {
+    const { journal } = world(on, {
+      preference: "on\n",
+      messages: [
+        { role: "user", text: "first", toolUses: [] },
+        { role: "assistant", text: "one", toolUses: [{}] },
+        { role: "user", text: "", toolUses: [], toolResults: [{}] },
+        { role: "user", text: "second", toolUses: [] },
+        { role: "assistant", text: "two", toolUses: [] },
+        { role: "user", text: "<task-notification>\nStop hook feedback</task-notification>", toolUses: [] },
+        { role: "user", text: operational("watcher", "signal: x"), toolUses: [] },
+        { role: "user", text: "third", toolUses: [] },
+        { role: "assistant", text: "three", toolUses: [] },
+      ],
+    });
+    // Rows draw in transcript order before session.start on a restore.
+    expect(isGrey(await $.ui.render(userMessage("first", "u1")))).toBe(true);
+    expect(isGrey(await $.ui.render(assistantMessage("one", "a1")))).toBe(true);
+    expect(isGrey(await $.ui.render(userMessage("second", "u2")))).toBe(true);
+    expect(isGrey(await $.ui.render(assistantMessage("two", "a2")))).toBe(true);
+    expect(isHidden(await $.ui.render(userMessage(stopHookNotice, "stop1", { kind: "task-notification" })))).toBe(true);
+    expect(isStock(await $.ui.render(userMessage("third", "u3")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("three", "a3")))).toBe(true);
+    // A later redraw of the earlier rows agrees with their first draw.
+    expect(isGrey(await $.ui.render(assistantMessage("two", "a2")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("three", "a3")))).toBe(true);
+    expect(journal.sessionMessageReads).toBe(1);
+  });
+
+  test("ends a restore countdown that overcounts as soon as the person sends a message", async ($, on) => {
+    world(on, {
+      preference: "on\n",
+      messages: [
+        { role: "user", text: "one", toolUses: [] },
+        { role: "user", text: "two", toolUses: [] },
+      ],
+    });
+    expect(isGrey(await $.ui.render(userMessage("one", "u1")))).toBe(true);
+    await $.prompt.submit(submission("next"));
+    expect(isStock(await $.ui.render(userMessage("next", "u9")))).toBe(true);
+  });
+
+  test("starts a fresh conversation after /clear", async ($, on) => {
+    world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.prompt.submit(submission("second"));
+    await $.ui.render(userMessage("second", "u2"));
+    await $.session.end({ reason: "clear", sessionId: "s1" });
+    expect(isStock(await $.ui.render(userMessage("again", "u3")))).toBe(true);
+    expect(isStock(await $.ui.render(assistantMessage("fresh", "a3")))).toBe(true);
+  });
+
+  test("leaves the optimistic row and long or control-character text drawable", async ($, on) => {
+    world(on, { preference: "on\n" });
+    await $.session.start(sessionStart);
+    await $.ui.render(userMessage("first", "u1"));
+    await $.prompt.submit(submission("second"));
+    const long = `${"x".repeat(12000)}\u0007`;
+    expect(isGrey(await $.ui.render(assistantMessage(long, "a1")))).toBe(false);
+    await $.ui.render(assistantMessage("seen", "a5"));
   });
 });

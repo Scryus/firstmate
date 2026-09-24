@@ -13,6 +13,12 @@
 // and the engine glue under `claude plugin test`. Nothing here rewrites a message: `ui.render` changes
 // drawings and leaves the stored transcript, model context, and session storage alone.
 //
+// Fade-history (../lib/fm-calm-fade.ts): while Calm is on, user and assistant rows before
+// the latest genuine user message draw grey through `Markdown` with `dimColor`, and the
+// notice Claude Code draws when an async Stop hook rewakes the session hides. The
+// boundary moves in `prompt.submit`, before the new row draws; a restored transcript is
+// seeded from the stored message count so its first painted frame is already correct.
+//
 // Presentation while Calm is on, sharing Pi Calm's goals where the mods API allows:
 // the stock working row (`Spinner`) is never hooked and draws exactly as Claude Code
 // draws it; `ToolUse`, `ToolResult`, and `ToolGroup` rows
@@ -26,6 +32,15 @@
 // the per-home preference rather than trusting a stale "off".
 // Each `session.start` reloads the preference for the new session.
 import type { EngineInterface, Register, RenderElement, RenderInput } from "claude-code";
+import {
+  countGenuineUserMessages,
+  createFadeTracker,
+  isGenuineUserRow,
+  isStopHookFeedbackRow,
+  markdownSafeText,
+  OPTIMISTIC_ROW_ID,
+  submitOpensPhase,
+} from "../lib/fm-calm-fade.ts";
 import {
   calmPreferencePath,
   parseCalmPreference,
@@ -42,6 +57,8 @@ let calm = false;
 let preferencePath: string | undefined;
 let activation: Promise<boolean> | undefined;
 let loading: Promise<void> | undefined;
+// Which rows are before the latest genuine user message; see ../lib/fm-calm-fade.ts.
+let fade = createFadeTracker();
 
 function isActivated($: EngineInterface): Promise<boolean> {
   if (activation === undefined) {
@@ -71,6 +88,14 @@ async function load($: EngineInterface): Promise<void> {
     $.plugin.root,
   );
   calm = parseCalmPreference(await readPreference($, preferencePath));
+  // A restored transcript draws its rows in order before the latest message is known, so
+  // count the stored genuine messages first and every row before the last one draws grey
+  // from its first draw.
+  try {
+    fade.beginRestore(countGenuineUserMessages(await $.session.messages(), userTextIsOperational));
+  } catch {
+    // A transcript that cannot be read leaves the rows to the submit and draw hooks.
+  }
   $.ui.invalidate("ui.render");
 }
 
@@ -82,6 +107,7 @@ function ensureLoaded($: EngineInterface): Promise<void> {
 async function resetSession($: EngineInterface): Promise<void> {
   if (loading !== undefined) await loading.catch(() => undefined);
   calm = false;
+  fade = createFadeTracker();
   preferencePath = undefined;
   loading = undefined;
   await ensureLoaded($);
@@ -140,9 +166,60 @@ export const register: Register = (on) => {
     return calm ? hiddenRow($, e) : next(e);
   });
 
+  // The optimistic user row and the stored one are both hooked here: the person's own
+  // Enter opens the new phase before either draws, so nothing draws bright and is then
+  // greyed. A prompt typed over a running turn, or a slash command, opens it when its row draws.
+  on("prompt.submit", async ($, e, next) => {
+    if (!(await isActivated($))) return next(e);
+    await ensureLoaded($);
+    if (submitOpensPhase(e) && fade.openPhase() && calm) $.ui.invalidate("ui.render");
+    return next(e);
+  });
+
+  on("session.end", async ($, e, next) => {
+    if (!(await isActivated($))) return next(e);
+    if (e.reason === "clear") fade = createFadeTracker();
+    return next(e);
+  });
+
   on("ui.render", { component: "UserMessage" }, async ($, e, next) => {
     if (!(await isActivated($))) return next(e);
     await ensureLoaded($);
-    return calm && userTextIsOperational(e.props.text) ? hiddenRow($, e) : next(e);
+    const { origin, text } = e.props;
+    // Operational rows and the Stop hook wake notice never count as a message the person
+    // sent, and hide before their first draw while Calm is on.
+    if (userTextIsOperational(text)) return calm ? hiddenRow($, e) : next(e);
+    if (isStopHookFeedbackRow(origin, text)) return calm ? hiddenRow($, e) : next(e);
+    if (e.requestId === OPTIMISTIC_ROW_ID) return next(e);
+    fade.observe(e.requestId);
+    if (isGenuineUserRow(origin, e.requestId) && fade.genuineRowDrawn(e.requestId) && calm) {
+      $.ui.invalidate("ui.render");
+    }
+    if (!calm || !fade.isOld(e.requestId)) return next(e);
+    const { Box, Text, Markdown } = $.ui.resolve(e);
+    return Box({
+      flexDirection: "row",
+      marginTop: 1,
+      children: [
+        Text({ dimColor: true, children: "> " }),
+        Box({ flexGrow: 1, flexShrink: 1, children: [Markdown({ text: markdownSafeText(text), dimColor: true })] }),
+      ],
+    });
+  });
+
+  on("ui.render", { component: "AssistantMessage" }, async ($, e, next) => {
+    if (!(await isActivated($))) return next(e);
+    await ensureLoaded($);
+    fade.observe(e.requestId);
+    if (!calm || !fade.isOld(e.requestId)) return next(e);
+    const { Box, Text, Markdown } = $.ui.resolve(e);
+    return Box({
+      flexDirection: "row",
+      marginTop: e.props.isFirstOfReply ? 1 : 0,
+      children: [
+        Text({ dimColor: true, children: e.props.isFirstOfReply ? "\u23fa " : "  " }),
+        Box({ flexGrow: 1, flexShrink: 1, children: [Markdown({ text: markdownSafeText(e.props.text), dimColor: true })] }),
+      ],
+    });
   });
 };

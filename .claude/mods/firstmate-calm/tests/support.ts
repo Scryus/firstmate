@@ -49,7 +49,12 @@ export type WorldOptions = {
   /** The Firstmate home FM_HOME names; undefined leaves FM_HOME unset. */
   home?: string | undefined;
   /** What `$.session.messages()` answers. */
-  messages?: readonly { role: "user" | "assistant"; text: string; toolUses: readonly unknown[] }[];
+  messages?: readonly {
+    role: "user" | "assistant";
+    text: string;
+    toolUses: readonly unknown[];
+    toolResults?: readonly unknown[];
+  }[];
   /** The `theme` row's value as `$.config.list()` reports it; omitted means `dark`. */
   theme?: unknown;
 };
@@ -112,6 +117,8 @@ export function world(on: On, options: WorldOptions = {}): World {
     return { value: [...(options.messages ?? [])] as SessionMessage[] };
   });
   on("session.start", async (_$, e) => ({ cwd: e.cwd }));
+  on("prompt.submit", async (_$, e) => ({ text: e.text }));
+  on("session.end", async (_$, e) => ({ sessionId: e.sessionId }));
   on("config.list", async () => {
     journal.configLists += 1;
     return {
@@ -194,14 +201,23 @@ export function toolGroup(requestId = "group-1", isExpanded = false) {
   };
 }
 
-export function userMessage(text: string, requestId = "user-1") {
+export function userMessage(
+  text: string,
+  requestId = "user-1",
+  origin: { kind: "composer" | "task-notification" } = { kind: "composer" },
+) {
   return {
     surface: "terminal" as const,
     component: "UserMessage" as const,
     requestId,
     viewport: VIEWPORT,
-    props: { text, origin: { kind: "composer" as const } },
+    props: { text, origin },
   };
+}
+
+/** A submission as the composer raises it: idle session, the person's own Enter. */
+export function submission(text: string, extra: { turnId?: string } = {}) {
+  return { text, wait: false, origin: { kind: "composer" as const }, ...extra };
 }
 
 export function assistantMessage(text: string, requestId = "assistant-1") {
@@ -226,6 +242,12 @@ export function calmCommand() {
 /** Whether a drawing is the mod's zero-height box. */
 export function isHidden(tree: unknown): boolean {
   return JSON.stringify(tree).includes('"display":"none"');
+}
+
+/** Whether a drawing is the mod's grey replacement: the engine's Markdown drawn dim. */
+export function isGrey(tree: unknown): boolean {
+  const drawn = JSON.stringify(tree);
+  return drawn.includes('"dimColor":true') && drawn.includes("Markdown");
 }
 
 /** Whether a drawing is the engine's own. */

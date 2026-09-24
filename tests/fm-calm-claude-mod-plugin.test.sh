@@ -47,9 +47,8 @@ test_validate_strict() {
     expect_in_report "$report" "ui.render{component=ToolResult}" "the scan of $path does not hook tool results"
     expect_in_report "$report" "ui.render{component=ToolGroup}" "the scan of $path does not hook tool groups"
     expect_in_report "$report" "ui.render{component=UserMessage}" "the scan of $path does not hook user rows"
-    case "$report" in
-      *'component=AssistantMessage'*) fail "Claude Code $CLAUDE_VERSION: the scan of $path hooks assistant rows, so Calm could hide assistant text" ;;
-    esac
+    expect_in_report "$report" "prompt.submit" "the scan of $path does not hook prompt submission for the fade boundary"
+    expect_in_report "$report" "ui.render{component=AssistantMessage}" "the scan of $path does not hook assistant rows for the fade"
     expect_in_report "$report" "command.run{command=calm}" "the scan of $path does not serve /calm"
     expect_in_report "$report" "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE" "the scan of $path reads a different environment"
     expect_in_report "$report" "env writes: nothing" "the scan of $path writes the environment"
@@ -58,13 +57,13 @@ test_validate_strict() {
         printf '%s\n' "$report" >&2
         fail "Claude Code $CLAUDE_VERSION scanned a hook on the working row at $path, which Calm must leave to the engine"
         ;;
-      *"process.run"*|*"http.fetch"*|*"env.set"*|*"prompt."*|*"tool.call"*)
+      *"process.run"*|*"http.fetch"*|*"env.set"*|*'$.prompt.'*|*"tool.call"*)
         printf '%s\n' "$report" >&2
         fail "Claude Code $CLAUDE_VERSION scanned a capability the Calm mod must not use at $path"
         ;;
     esac
   done
-  pass "Claude Code $CLAUDE_VERSION validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the tool and user drawings and /calm, and never the working row"
+  pass "Claude Code $CLAUDE_VERSION validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the tool, user, and assistant drawings, prompt submission for the fade boundary, and /calm, and never the working row"
 }
 
 test_plugin_suites() {
@@ -81,7 +80,7 @@ test_plugin_suites() {
     printf '%s\n' "$report" >&2
     fail "Claude Code $CLAUDE_VERSION reported Calm mod plugin test failures"
   }
-  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, visible assistant text, and the untouched stock working row"
+  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, greyed earlier rows, and the untouched stock working row"
 }
 
 test_validate_strict

@@ -11,6 +11,8 @@
 #      persists off, /calm hides them again and persists on, all without a Calm output
 #      row in the transcript.
 #   3. `claude --continue` restores the transcript with those rows still hidden.
+#   4. In the fullscreen layout, a new prompt greys every earlier prompt row and leaves the
+#      new one bright, and a restored transcript's first frame already has the earlier row grey.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication and one trusted temporary folder. A few Haiku turns are submitted.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -67,9 +69,10 @@ launch() {  # <debug-log> <flag: 1|0> [claude args...]
   local log=$1 flag=$2 flag_env=''
   shift 2
   [ "$flag" = 1 ] && flag_env="CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1"
+  [ -n "${FULLSCREEN:-}" ] && flag_env="$flag_env CLAUDE_CODE_NO_FLICKER=1"
   tmux -L "$SOCKET" kill-session -t "$SESSION" 2>/dev/null || true
   tmux -L "$SOCKET" new-session -d -s "$SESSION" -x 160 -y 44 -c "$PROJECT" \
-    "env $(unset_inherited) $flag_env FM_HOME='$FM_HOME_DIR' CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --model haiku --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\"}' --debug-file '$log' $*; printf '\nCLAUDE_EXIT=%s\n' \"\$?\"; sleep 30"
+    "env $(unset_inherited) $flag_env FM_HOME='$FM_HOME_DIR' CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --model haiku --dangerously-skip-permissions --setting-sources user,project --settings '{\"feedbackDrafts\":\"off\"}' --debug-file '$log' $*; printf '\nCLAUDE_EXIT=%s\n' \"\$?\"; sleep 30"
 }
 
 screen() {
@@ -206,7 +209,7 @@ launch "$DEBUG_LOG_OFF" 0
 wait_idle
 grep -q 'hooks modules not loaded' "$DEBUG_LOG_OFF" \
   || fail "Claude Code $CLAUDE_VERSION did not report hooks modules off with the flag unset"
-if grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_OFF"; then
+if grep -q 'hooks module firstmate-calm[@a-z-]* loaded' "$DEBUG_LOG_OFF"; then
   fail "Claude Code $CLAUDE_VERSION loaded the Calm hooks module although the flag was unset"
 fi
 if command_listed calm; then
@@ -259,11 +262,11 @@ pass "Claude Code $CLAUDE_VERSION with the flag unset: no hooks module, no /calm
 launch "$DEBUG_LOG_ON" 1
 wait_idle
 i=0
-while [ "$i" -lt 100 ] && ! grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_ON"; do
+while [ "$i" -lt 100 ] && ! grep -q 'hooks module firstmate-calm[@a-z-]* loaded' "$DEBUG_LOG_ON"; do
   sleep 0.1
   i=$((i + 1))
 done
-grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_ON" \
+grep -q 'hooks module firstmate-calm[@a-z-]* loaded' "$DEBUG_LOG_ON" \
   || fail "Claude Code $CLAUDE_VERSION did not load the Calm hooks module from the project's .claude/skills path with the flag on"
 # The engine logs one benign notice for every options-less hooks module ("options
 # requested but its manifest declares no userConfig"); anything else is a real problem.
@@ -303,16 +306,34 @@ esac
 operational=$(printf 'signal: %s/state/probe.status changed. Reply with exactly OPERATIONAL_PROCESSED and nothing else.' "$LAB" | "$OPERATIONAL_INPUT" encode watcher) \
   || fail "could not encode the operational probe"
 send "$operational"
+# Claude Code 2.1.281 strips the invisible marker from typed text ("Removed 1 invisible
+# character"), so the typed row is no longer an operational input and the probe cannot judge it.
+op_probe=1
 enter
-wait_screen 'OPERATIONAL_PROCESSED' 'the operational answer' 600
-sleep 1
-operational_screen=$(screen)
-case "$operational_screen" in
-  *'probe.status changed'*)
-    printf '%s\n' "$operational_screen" >&2
-    fail "the operational user row drew while Calm was on"
-    ;;
-esac
+i=0
+while [ "$i" -lt 30 ]; do
+  case "$(screen)" in
+    *'invisible character'*) op_probe=0; break ;;
+  esac
+  sleep 0.1
+  i=$((i + 1))
+done
+if [ "$op_probe" -eq 0 ]; then
+  tmux -L "$SOCKET" send-keys -t "$SESSION" C-u C-u C-u C-u
+  sleep 0.5
+  printf '# note: the composer strips the operational marker on this build, so the operational row probe is skipped\n'
+fi
+if [ "$op_probe" -eq 1 ]; then
+  wait_screen '⏺ OPERATIONAL_PROCESSED' 'the operational answer' 600
+  sleep 1
+  operational_screen=$(screen)
+  case "$operational_screen" in
+    *'probe.status changed'*)
+      printf '%s\n' "$operational_screen" >&2
+      fail "the operational user row drew while Calm was on"
+      ;;
+  esac
+fi
 
 # /calm off: rows restore, the preference persists off, no Calm output row.
 send '/calm'
@@ -320,13 +341,15 @@ enter
 wait_screen 'shell command' 'the restored tool row after /calm off' 200
 [ "$(cat "$FM_HOME_DIR/config/calm")" = off ] || fail "/calm did not persist off"
 restored=$(screen)
-case "$restored" in
-  *'probe.status changed'*) : ;;
-  *)
-    printf '%s\n' "$restored" >&2
-    fail "/calm off did not restore the operational user row"
-    ;;
-esac
+if [ "$op_probe" -eq 1 ]; then
+  case "$restored" in
+    *'probe.status changed'*) : ;;
+    *)
+      printf '%s\n' "$restored" >&2
+      fail "/calm off did not restore the operational user row"
+      ;;
+  esac
+fi
 # The toggle answers with a transient toast under the prompt, never a transcript row:
 # the plugin's name must leave the screen once the toast expires.
 case "$restored" in
@@ -372,9 +395,14 @@ case "$hidden_again" in
     fail "/calm on did not hide the rows again"
     ;;
 esac
+i=0
+while [ "$i" -lt 40 ] && [ "$(cat "$FM_HOME_DIR/config/calm")" != on ]; do
+  sleep 0.25
+  i=$((i + 1))
+done
 [ "$(cat "$FM_HOME_DIR/config/calm")" = on ] || fail "/calm did not persist on"
 case "$hidden_again" in
-  *'gamma'*|*'OPERATIONAL_PROCESSED'*) : ;;
+  *'gamma'*) : ;;
   *) fail "Calm on hid a genuine assistant reply" ;;
 esac
 send '/exit'
@@ -398,3 +426,42 @@ send '/exit'
 enter
 sleep 1
 pass "Claude Code $CLAUDE_VERSION resumes the transcript with Calm's hidden rows still hidden and the preference intact"
+
+# --- 4. Fade: earlier prompts grey, the newest bright, restored transcripts right at once ----
+# The fullscreen layout is the one that can redraw earlier rows. A row is grey when its
+# line carries the dim attribute (SGR 2) in the styled capture.
+styled_line() {  # <fixed text>
+  tmux -L "$SOCKET" capture-pane -e -p -t "$SESSION" 2>/dev/null | grep -F -- "$1" | head -1
+}
+line_is_dim() {  # <styled line>
+  case "$1" in
+    *$'\033[2m'*|*$'\033[2;'*|*';2m'*|*';2;'*) return 0 ;;
+  esac
+  return 1
+}
+
+FULLSCREEN=1 launch "$DEBUG_LOG_RESUME" 1 --continue
+wait_screen 'gamma' 'the resumed transcript for the fade case' 400
+send 'Reply with exactly SECOND_DONE and nothing else.'
+enter
+wait_screen 'SECOND_DONE' 'the second answer' 600
+sleep 1
+first_line=$(styled_line 'Run this exact bash command')
+second_line=$(styled_line 'Reply with exactly SECOND_DONE')
+[ -n "$first_line" ] && [ -n "$second_line" ] || fail "the fade case could not find both prompt rows on screen"
+line_is_dim "$first_line" || { printf '%s\n' "$first_line" | cat -v >&2; printf '%s\n' "$second_line" | cat -v >&2; fail "the earlier prompt row was not grey after a new prompt"; }
+line_is_dim "$second_line" && fail "the newest prompt row was grey"
+send '/exit'
+enter
+sleep 1
+
+FULLSCREEN=1 launch "$DEBUG_LOG_RESUME" 1 --continue
+wait_screen 'SECOND_DONE' 'the resumed transcript for the fade restore case' 400
+sleep 1
+first_line=$(styled_line 'Run this exact bash command')
+[ -n "$first_line" ] || fail "the restored earlier prompt row is not on screen"
+line_is_dim "$first_line" || fail "the restored earlier prompt row was not grey"
+send '/exit'
+enter
+sleep 1
+pass "Claude Code $CLAUDE_VERSION fullscreen: a new prompt greys the earlier prompt row and keeps the newest bright, and a resumed transcript draws the earlier row grey"
