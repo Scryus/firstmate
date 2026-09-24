@@ -1,0 +1,6 @@
+Pi default watcher child: poll=5s heartbeat=1800s stale=600s
+Pi configured watcher child: poll=7s heartbeat=1900s stale=620s
+Pi inherited watcher child: poll=9s heartbeat=1900s stale=620s
+watcher: invalid /private/var/folders/pv/zg6ftjh91kg4zt54wzph96c40000gn/T/fm-pi-watch-extension.FJ3Gix/pi-cadence-home/config/pi-watch.json: unknown cadence key
+Pi invalid watcher child: poll=5s heartbeat=1800s stale=600s
+ok - Pi cadence defaults, local override, inherited precedence, and invalid-file fallback reach the watcher child
