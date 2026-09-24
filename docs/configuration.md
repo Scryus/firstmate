@@ -721,6 +721,11 @@ Steady-state off is silent and writes nothing.
 Relay remains additive to non-Relay lifecycle behavior: homes without the generated artifacts keep the default watcher cadence and do not run the Relay poll.
 Its request handling remains in Relay-specific `bin/` scripts and the `fmx-respond` skill, while the watcher owns authenticated dispatch from the generated local identity shim.
 
+On Pi, an optional home-local `config/pi-watch.json` overrides only the watcher child's cadence settings without changing shared defaults or Claude settings.
+Use a JSON object containing positive integer values for `FM_POLL`, `FM_HEARTBEAT`, and/or `FM_STALE_ESCALATE_SECS`; unknown keys or invalid values reject the file, and inherited environment values take precedence.
+For example, `{"FM_POLL":5,"FM_HEARTBEAT":1800,"FM_STALE_ESCALATE_SECS":600}` checks workers every five seconds, scans the fleet every thirty minutes, and escalates a provably working stale worker after ten minutes.
+Pi applies changes when its extension starts or restarts the watcher; other primary harnesses do not read this file.
+
 `bin/fm-x-poll.sh` calls `GET /connector/poll` with `Authorization: Bearer <FMX_PAIRING_TOKEN>`.
 HTTP 204 is silent.
 A newly offered pending mention with non-empty `text` is stored at `state/x-inbox/<request_id>.json` and wakes firstmate exactly once with `x-mention <request_id>`.

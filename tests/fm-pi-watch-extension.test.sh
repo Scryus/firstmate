@@ -223,9 +223,10 @@ test_pi_redundant_tool_call_is_owned_noop() {
   mkdir -p "$repo/bin" "$home/state" "$home/config"
   install_pi_watch_extension_fixture "$repo"
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  printf '{"FM_POLL":5,"FM_HEARTBEAT":1800,"FM_STALE_ESCALATE_SECS":600}\n' > "$home/config/pi-watch.json"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'arm\n' >> "${FM_ARM_LOG:?}"
+printf '%s %s %s\n' "${FM_POLL-unset}" "${FM_HEARTBEAT-unset}" "${FM_STALE_ESCALATE_SECS-unset}" >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
@@ -268,6 +269,7 @@ if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("initial arm child did 
 await new Promise((resolve) => setTimeout(resolve, 100));
 const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
 if (rows.length !== 1) throw new Error(`redundant call spawned ${rows.length} arm children`);
+if (rows[0] !== "5 1800 600") throw new Error(`Pi cadence config was not passed to watcher child: ${rows[0]}`);
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 EOF
 )
